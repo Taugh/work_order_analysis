@@ -22,15 +22,21 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         # CLI mode
         file_path = sys.argv[1]
+
         df_cleaned = load_work_order_files(file_path)
 
         # 💾 Save cleaned version before classification
         cleaned_path = "data/processed/cleaned_work_orders.csv"
         df_cleaned.to_csv(cleaned_path, index=False)
 
-        summary = generate_monthly_summary(df)
-        late_df = get_extreme_late_work_orders(df)
+        # 🏷️ Apply classification
+        df_classified = apply_classification(df_cleaned)
+
+        # 📊 Generate and export summaries
+        summary = generate_monthly_summary(df_classified)
+        late_df = get_extreme_late_work_orders(df_classified)
         export_summary_to_excel(summary, late_df)
+
         # print_centered_summary(summary)
     else:
         # GUI mode
