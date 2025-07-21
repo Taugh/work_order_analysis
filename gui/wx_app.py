@@ -78,6 +78,10 @@ class WorkOrderDashboard(wx.Frame):
         file_path = self.file_picker.GetPath()
         try:
             raw_df = load_work_order_files(file_path)
+            # 💾 Save cleaned data before classification
+            processed_path = os.path.join("data", "processed", "cleaned_work_orders.csv")
+            raw_df.to_csv(processed_path, index=False)
+            
             self.df = apply_classification(raw_df)
             self.status_text.SetLabel(f"✅ Loaded: {os.path.basename(file_path)}")
         except Exception as err:
