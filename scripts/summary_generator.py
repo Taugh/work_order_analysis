@@ -10,7 +10,7 @@ def generate_monthly_summary(df):
      # wo_class is the classification each work order is placed into (canceled, completed, missed, or open)
 
     if "report_month" not in df.columns or "wo_class" not in df.columns:  # wo_class is the
-                                                                                                                                                # classification each work order is placed in
+        # classification each work order is placed in
         raise ValueError("Missing 'report_month' or 'wo_class'. Run classfier first.")
 
     summary = df.groupby("report_month")["wo_class"].value_counts().unstack(fill_value=0)
@@ -72,12 +72,9 @@ def export_summary_to_excel(summary_df, late_df, filename="monthly_summary.xlsx"
 
 def get_extreme_late_work_orders(df, days_late=90):
     today = pd.Timestamp.today()
-    late_df = (
-        df[df["status"].isin(["APPR", "INPRG", "WAPPR"])]
-        .assign(late_days=(today - df["target_date"]).dt.days)
-        .query("late_days > @days_late")
-        .copy()
-    )
+    late_df = df[df["status"].isin(["APPR", "INPRG", "WAPPR"])].copy()
+    late_df["late_days"] = (today - late_df["target_date"]).dt.days
+    late_df = late_df.query("late_days > @days_late").copy()
 
     late_df["report_month"] = late_df["target_date"].dt.to_period("M").astype(str)
     late_df = late_df[
@@ -88,6 +85,8 @@ def get_extreme_late_work_orders(df, days_late=90):
             "target_date",
             "late_days",
             "description",
+            "wo_class",
+            "status"
         ]
     ].sort_values(["report_month", "wo_assigned_group", "late_days"], ascending=[True, True, False])
 
