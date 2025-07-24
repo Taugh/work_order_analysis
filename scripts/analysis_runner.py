@@ -46,15 +46,13 @@ if __name__ == "__main__":
         help="Run analysis without exporting files"
     )
     parser.add_argument("--mode", choices=["summary", "governance"], default="summary")
+    args = parser.parse_args()  # ← needs to come before you use args
+
     if args.mode == "summary":
         metrics = run_analysis(filepath="data/processed/cleaned_work_orders.csv", dry_run=args.dry_run)
         # Later: export_summary(metrics, output_path)
+        for k, v in metrics.items():
+            print(f"{k}: {v}")
     elif args.mode == "governance":
         logging.info("🧪 Governance mode not implemented yet.")
 
-    args = parser.parse_args()
-
-    metrics = run_analysis(filepath="data/processed/cleaned_work_orders.csv", dry_run=args.dry_run)
-
-    for k, v in metrics.items():
-        print(f"{k}: {v}")
