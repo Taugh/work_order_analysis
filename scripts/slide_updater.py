@@ -62,7 +62,7 @@ def update_group_slides(prs_path, group_data, slide_index_chart, slide_index_per
     """
 
     # Extract reporting label from latest date (optional)
-    last_month_label = pd.to_datetime(group_data.get("reporting_month", "today")).strftime("%b-%Y")
+    last_month_label = pd.to_datetime(group_data["reporting_month"], format="%Y-%m").strftime("%b-%Y")
 
     # Output paths
     chart_path_1 = f"outputs/group_missed_chart_{last_month_label}.png"

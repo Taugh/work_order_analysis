@@ -5,28 +5,53 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.dml.color import RGBColor
+
 
 def create_governance_slide(summary_df, prs=None):
-    if prs is None:
-        prs = Presentation()
+    
+    """
+        Creates a slide titled 'Preventive Maintenance Summary' using the grand total row
+        from the summary DataFrame. The layout and formatting match the SLT governance deck.
+        """
 
-    slide_layout = prs.slide_layouts[5]
-    slide = prs.slides.add_slide(slide_layout)
+    
+    # Extract the grand total row
+    grand_total = summary_df[summary_df["Month"] == "Grand Total"].iloc[0]
+
+    # Add a new slide
+    slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only layout
     slide.shapes.title.text = "Preventive Maintenance Summary"
 
-    pm_row = summary_df.iloc[0]
-    left, top, width, height = Inches(1), Inches(2), Inches(6), Inches(2)
-    textbox = slide.shapes.add_textbox(left, top, width, height)
-    tf = textbox.text_frame
-    tf.word_wrap = True
-    tf.text = (
-        f"Due: {pm_row['due']:,}\n"
-        f"Completed: {pm_row['completed']:,}\n"
-        f"Missed: {pm_row['missed']:,}\n"
-        f"Completion %: {pm_row['completion_pct']}%"
+    # Create a rounded rectangle for the summary text
+    left = Inches(1)
+    top = Inches(1.5)
+    width = Inches(8)
+    height = Inches(2.5)
+    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+
+    # Format the shape
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor(255, 255, 255)
+    shape.line.color.rgb = RGBColor(0, 0, 0)
+
+    # Add formatted summary text
+    text_frame = shape.text_frame
+    text_frame.clear()
+    p = text_frame.paragraphs[0]
+    p.text = (
+        f"Due: {grand_total['Due']:.0f}\n"
+        f"Completed: {grand_total['Completed']:.0f}\n"
+        f"Missed: {grand_total['Missed']:.0f}\n"
+        f"Completion %: {grand_total['Completion %']:.1f}%"
     )
+    p.font.size = Pt(24)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(0, 0, 0)
 
     return prs
+
 
 def create_missed_by_month_slide(prs, by_month_df):
     slide_layout = prs.slide_layouts[5]
