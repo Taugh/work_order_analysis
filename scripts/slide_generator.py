@@ -9,16 +9,16 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.dml.color import RGBColor
 
 
-def create_governance_slide(summary_df, prs=None):
+def create_governance_slide(summary_df, prs):
+    print("create_governance_slide called")
+    print("summary_df columns:", summary_df.columns)
     
     """
         Creates a slide titled 'Preventive Maintenance Summary' using the grand total row
         from the summary DataFrame. The layout and formatting match the SLT governance deck.
         """
 
-    
-    # Extract the grand total row
-    grand_total = summary_df[summary_df["Month"] == "Grand Total"].iloc[0]
+    grand_total = summary_df.iloc[0]
 
     # Add a new slide
     slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only layout
@@ -44,7 +44,7 @@ def create_governance_slide(summary_df, prs=None):
         f"Due: {grand_total['Due']:.0f}\n"
         f"Completed: {grand_total['Completed']:.0f}\n"
         f"Missed: {grand_total['Missed']:.0f}\n"
-        f"Completion %: {grand_total['Completion %']:.1f}%"
+        f"Completion %: {grand_total['Completion %']:.1f}"
     )
     p.font.size = Pt(24)
     p.font.bold = True
@@ -59,8 +59,7 @@ def create_missed_by_month_slide(prs, by_month_df):
     slide.shapes.title.text = "Preventive Maintenance Missed"
 
     chart_data = CategoryChartData()
-    chart_data.categories = by_month_df["report_month"].tolist()
-
+    chart_data.categories = by_month_df["report_month"].astype(str).tolist()
     chart_data.add_series("Missed", by_month_df["missed"].tolist())
     chart_data.add_series("Completed", by_month_df["completed"].tolist())
     chart_data.add_series("Generated", by_month_df["generated"].tolist())
@@ -70,9 +69,9 @@ def create_missed_by_month_slide(prs, by_month_df):
         XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data
     ).chart
 
-    # Convert second and third series to line charts
-    chart.series[1].chart_type = XL_CHART_TYPE.LINE_MARKERS
-    chart.series[2].chart_type = XL_CHART_TYPE.LINE_MARKERS
+    # Try to force series 1 and 2 to be lines
+    chart.series[1].chart_type = XL_CHART_TYPE.LINE
+    chart.series[2].chart_type = XL_CHART_TYPE.LINE
 
     chart.has_legend = True
     chart.legend.position = 2  # Top
@@ -104,19 +103,62 @@ def create_missed_by_group_slide(prs, by_group_df):
                 for run in paragraph.runs:
                     run.font.size = Pt(12)
     
-def create_full_governance_deck(summary_df, by_group_df, by_month_df, output_path=
-                                "outputs/presentations/governance_slide.pptx"):
+def update_governance_slide(summary_df, prs, slide_index=1):
+    slide = prs.slides[slide_index]  # Use the existing slide
+    # Find the shape (e.g., a text box or table) you want to update
+    # Example: update a text box with summary info
+    for shape in slide.shapes:
+        if shape.has_text_frame and "Preventive Maintenance Summary" in shape.text:
+            text_frame = shape.text_frame
+            text_frame.clear()
+            grand_total = summary_df.iloc[0]
+            p = text_frame.paragraphs[0]
+            p.text = (
+                f"Due: {grand_total['Due']:.0f}\n"
+                f"Completed: {grand_total['Completed']:.0f}\n"
+                f"Missed: {grand_total['Missed']:.0f}\n"
+                f"Completion %: {grand_total['Completion %']:.1f}"
+            )
+            p.font.size = Pt(24)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(0, 0, 0)
+            break
 
-    prs = Presentation()
+def update_missed_by_month_chart(prs, by_month_df, slide_index=2, chart_name="PM Missed Chart"):
+    slide = prs.slides[slide_index]
+    for shape in slide.shapes:
+        if hasattr(shape, "chart") and shape.name == chart_name:
+            chart_data = CategoryChartData()
+            chart_data.categories = by_month_df["report_month"].astype(str).tolist()
+            chart_data.add_series("Missed", by_month_df["missed"].tolist())
+            chart_data.add_series("Completed", by_month_df["completed"].tolist())
+            chart_data.add_series("Generated", by_month_df["generated"].tolist())
+            shape.chart.replace_data(chart_data)
+            break
 
-    # Add slides
-    create_governance_slide(summary_df, prs)
-    create_missed_by_month_slide(prs, by_month_df)
-    create_missed_by_group_slide(prs, by_group_df)
+def update_missed_by_group_charts(prs, by_group_df, slide_index=3):
+    slide = prs.slides[slide_index]
+    # Example: update two charts by name
+    for shape in slide.shapes:
+        if hasattr(shape, "chart"):
+            if shape.name == "Qty Missed by Group":
+                chart_data = CategoryChartData()
+                chart_data.categories = by_group_df["group"].tolist()
+                chart_data.add_series("Missed", by_group_df["missed"].tolist())
+                shape.chart.replace_data(chart_data)
+            elif shape.name == "% Missed by Group":
+                chart_data = CategoryChartData()
+                chart_data.categories = by_group_df["group"].tolist()
+                chart_data.add_series("% Missed", by_group_df["missed_percent"].tolist())
+                shape.chart.replace_data(chart_data)
 
-    # Save deck
+def create_full_governance_deck(summary_df, by_group_df, by_month_df, output_path="outputs/presentations/governance_slide.pptx"):
+    print("create_full_governance_deck called")
+    prs = Presentation(r"data\templates\governance_slide_template.pptx")
+    update_governance_slide(summary_df, prs, slide_index=1)
+    update_missed_by_month_chart(prs, by_month_df, slide_index=2)
+    update_missed_by_group_charts(prs, by_group_df, slide_index=3)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     prs.save(output_path)
     print(f"✅ Full governance deck saved to: {output_path}")
-
 

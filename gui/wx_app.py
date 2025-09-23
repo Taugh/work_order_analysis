@@ -115,7 +115,7 @@ class WorkOrderDashboard(wx.Frame):
 
 
                 export_governance_report(gov_data, filename="governance_overview.xlsx")
-                create_governance_slide(gov_data["summary"])
+                ##create_governance_slide(gov_data["summary"])
 
                 # ✅ Generate slide from the summary sheet
                 #create_governance_slide(gov_data["summary"])

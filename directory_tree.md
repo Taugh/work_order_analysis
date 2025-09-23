@@ -29,7 +29,8 @@ work_order_analysis/
 ├── data
 │   ├── logs
 │   ├── processed
-│   │   └── cleaned_work_orders.csv
+│   │   ├── cleaned_work_orders.csv
+│   │   └── governance_slide_template.pptx
 │   └── raw
 │       └── TestQSRData.xlsx
 ├── directory_tree.md

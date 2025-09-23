@@ -16,6 +16,7 @@ def generate_monthly_summary(df):
     summary = df.groupby("report_month")["wo_class"].value_counts().unstack(fill_value=0)
     summary["total_due"] = summary.sum(axis=1)
     summary["completion_pct"] = (summary.get("on_time", 0) / summary["total_due"]) * 100
+    summary = summary.reset_index().rename(columns={"report_month": "Month"})
 
     # Clean and reorder columns
 
@@ -81,14 +82,14 @@ def get_extreme_late_work_orders(df, days_late=90):
         [
             "report_month",
             "work_order",
-            "wo_assigned_group",
+            "group",
             "target_date",
             "late_days",
             "description",
             "wo_class",
             "status"
         ]
-    ].sort_values(["report_month", "wo_assigned_group", "late_days"], ascending=[True, True, False])
+    ].sort_values(["report_month", "group", "late_days"], ascending=[True, True, False])
 
     return late_df
 

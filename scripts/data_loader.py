@@ -17,7 +17,7 @@ def load_work_order_files(file_path):
     dfs = []
 
     for file in all_files:
-        df = pd.read_excel(file_path, engine="openpyxl")
+        df = pd.read_excel(file, engine="openpyxl")
 
         # Normalize column names
         df = df.rename(columns=COLUMN_MAP)
@@ -31,8 +31,10 @@ def load_work_order_files(file_path):
         df["report_month"] = df["target_date"].dt.to_period("M")
 
         dfs.append(df)
-
+            # After loading
     # Combine all files
     combined_df = pd.concat(dfs, ignore_index=True)
+    print(combined_df.columns)
     return combined_df
+    
 
