@@ -44,6 +44,18 @@ def generate_monthly_summary(df):
     summary["Month"] = summary["Month"].astype(str)
     summary.loc["Grand Total", "Month"] = "Grand Total"
 
+    # Separate out the Grand Total row
+    grand_total_row = summary[summary["Month"] == "Grand Total"]
+    summary_no_total = summary[summary["Month"] != "Grand Total"]
+
+    # Sort only the actual months
+    summary_no_total = summary_no_total.sort_values(
+        "Month", key=lambda x: pd.to_datetime(x.str.strip(), format="%Y-%m"), ignore_index=True
+    )
+
+    # Concatenate the sorted months and the Grand Total row
+    summary = pd.concat([summary_no_total, grand_total_row], ignore_index=True)
+
     return summary
 
 def export_summary_to_excel(summary_df, late_df, filename="monthly_summary.xlsx"):
@@ -94,29 +106,21 @@ def get_extreme_late_work_orders(df, days_late=90):
     return late_df
 
 def generate_governance_overview(df):
-    # Normalize wo_class just in case
-    df["wo_class"] = df["wo_class"].str.strip().str.lower()
-
-    total_due = len(df)
-    total_completed = len(df[df["wo_class"] == "on_time"])
-    total_missed = len(df[df["wo_class"] == "missed"])
-    canceled = len(df[df["wo_class"] ==  "canceled"])
-    completion_pct = round((total_completed / total_due) * 100, 1) if total_due > 0 else 0
-
-    print("🔍 Total work orders:", total_due)
-    print("🔍 wo_class breakdown:\n", df["wo_class"].value_counts())
-
-    summary_df = pd.DataFrame([{
-        "due": total_due,
-        "completed": total_completed,
-        "missed": total_missed,
-        "canceled": canceled,
-        "completion_pct": completion_pct
-    }])
-
-    return {
-        "summary": summary_df
-    }
+    # Example: group by month and aggregate
+    df["report_month"] = pd.to_datetime(df["target_date"]).dt.strftime("%b-%y")
+    summary = (
+        df.groupby("report_month")
+        .agg(
+            Due=("work_order", "count"),
+            Completed=("wo_class", lambda x: (x == "on_time").sum()),
+            Missed=("wo_class", lambda x: (x == "missed").sum()),
+            Canceled=("wo_class", lambda x: (x == "canceled").sum()),
+        )
+        .reset_index()
+    )
+    summary["Completion %"] = 100 * summary["Completed"] / summary["Due"]
+    summary = summary.rename(columns={"report_month": "Month"})
+    return {"summary": summary}
 
 def export_governance_report(data_dict, filename="governance_overview.xlsx"):
     output_dir = "outputs/reports"
@@ -148,25 +152,29 @@ def generate_pm_breakdowns(df):
         .sort_values("month_sort")
     )
 
-    # Add total generated (sum of all classes)
     monthly_counts["generated"] = monthly_counts.sum(axis=1, numeric_only=True)
-
-    # Rename columns for consistency
     monthly_counts = monthly_counts.rename(columns={
         "missed": "missed",
         "on_time": "completed"
     })
-
-    # Ensure all expected columns exist
     for col in ["missed", "completed"]:
         if col not in monthly_counts:
             monthly_counts[col] = 0
-
-    # Final output
     by_month = monthly_counts[["report_month", "missed", "completed", "generated"]]
 
-    # Missed by group
-    by_group = df[df["wo_class"] == "missed"].groupby("group").size().reset_index(name="missed")
+    # --- FIX: Aggregate by group with all needed columns ---
+    by_group = (
+        df
+        .groupby("group")
+        .agg(
+            missed=("wo_class", lambda x: (x == "missed").sum()),
+            completed=("wo_class", lambda x: (x == "on_time").sum()),
+            generated=("wo_class", "count"),
+            missed_percent=("wo_class", lambda x: 100 * (x == "missed").sum() / len(x)),
+            still_open=("wo_class", lambda x: (x == "open").sum())
+        )
+        .reset_index()
+    )
 
     return {
         "by_group": by_group,
@@ -193,4 +201,50 @@ def generate_monthly_governance_overview(df):
 
     monthly_summary = df.groupby("report_month").apply(summarize).reset_index()
     return monthly_summary.sort_values("report_month")
+
+def generate_pm_governance_breakdown(df):
+    df["wo_class"] = df["wo_class"].str.strip().str.lower()
+    df["group"] = df["group"].fillna("Unassigned")
+    df["target_date"] = pd.to_datetime(df["target_date"], errors="coerce")
+
+    # Format for display and sorting
+    df["report_month"] = df["target_date"].dt.strftime("%b-%y")
+    df["month_sort"] = df["target_date"].dt.to_period("M").dt.to_timestamp()
+
+    # Missed, completed, and total (generated) per month
+    monthly_summary = (
+        df.groupby(["report_month", "month_sort"])
+        .agg(
+            missed=("wo_class", lambda x: (x == "missed").sum()),
+            completed=("wo_class", lambda x: (x == "on_time").sum()),
+            generated=("wo_class", "count"),
+            completion_pct=("wo_class", lambda x: 100 * (x == "on_time").sum() / len(x)),
+            still_open=("wo_class", lambda x: (x == "open").sum())
+        )
+        .reset_index()
+        .sort_values("month_sort")
+    )
+
+    return monthly_summary
+
+def generate_group_governance_report(df):
+    df["wo_class"] = df["wo_class"].str.strip().str.lower()
+    df["group"] = df["group"].fillna("Unassigned")
+    df["target_date"] = pd.to_datetime(df["target_date"], errors="coerce")
+
+    # Missed, completed, and total (generated) per group
+    by_group = (
+        df
+        .groupby("group")
+        .agg(
+            missed=("wo_class", lambda x: (x == "missed").sum()),
+            completed=("wo_class", lambda x: (x == "on_time").sum()),
+            generated=("wo_class", "count"),
+            missed_percent=("wo_class", lambda x: 100 * (x == "missed").sum() / len(x)),
+            still_open=("wo_class", lambda x: (x == "open").sum())
+        )
+        .reset_index()
+    )
+
+    return by_group
 

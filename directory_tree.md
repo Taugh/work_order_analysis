@@ -1,4 +1,6 @@
-```
+# work_order_analysis Directory Tree
+
+```text
 work_order_analysis/
 ├── .git
 │   ├── COMMIT_EDITMSG
@@ -31,8 +33,10 @@ work_order_analysis/
 │   ├── processed
 │   │   ├── cleaned_work_orders.csv
 │   │   └── governance_slide_template.pptx
-│   └── raw
-│       └── TestQSRData.xlsx
+│   ├── raw
+│   │   └── TestQSRData.xlsx
+│   └── templates
+│       └── governance_slide_template.pptx
 ├── directory_tree.md
 ├── gui
 │   ├── __init__.py

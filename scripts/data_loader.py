@@ -34,7 +34,7 @@ def load_work_order_files(file_path):
             # After loading
     # Combine all files
     combined_df = pd.concat(dfs, ignore_index=True)
-    print(combined_df.columns)
+   ## print(combined_df.columns)   # Used for debugging
     return combined_df
     
 
