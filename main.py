@@ -1,3 +1,28 @@
+# ---------------------------------------------------------------
+# main.py
+#
+# Purpose:
+#   Entry point for the work order analysis application.
+#   Supports both CLI and GUI modes for loading, classifying, analyzing,
+#   and reporting work order data.
+#
+# Requirements:
+#   - Input: Excel (.xlsx) or CSV file containing raw work order data.
+#   - Dependencies: wxPython for GUI, pandas, and all scripts in /scripts and /gui.
+#   - Functions: Uses data_loader, classifier, summary_generator, slide_generator, wx_app.
+#
+# Output:
+#   - CLI mode: Prints summary and group/monthly data to console, exports Excel and PowerPoint reports to /outputs.
+#   - GUI mode: Launches dashboard for interactive analysis and export.
+#
+# Workflow:
+#   - Loads and cleans input data.
+#   - Applies classification logic.
+#   - Generates summaries and breakdowns.
+#   - Exports results to Excel and PowerPoint.
+#   - In GUI mode, provides user feedback and export options.
+# ---------------------------------------------------------------
+
 # main.py
 
 import sys
@@ -21,17 +46,21 @@ def main():
 
 def prepare_data(file_path):
     df_cleaned = load_work_order_files(file_path)
-    cleaned_path = "data/processed/cleaned_work_orders.csv"
-    df_cleaned.to_csv(cleaned_path, index=False)
-
+    print("Loaded raw data shape:", df_cleaned.shape)
+    print(df_cleaned.head())
     df_classified = apply_classification(df_cleaned)
+    cleaned_path = "data/processed/cleaned_work_orders.csv"
+    df_classified.to_csv(cleaned_path, index=False)
+
+    df_classified["report_month"] = pd.to_datetime(df_classified["target_date"], errors="coerce").dt.strftime("%b-%y")
 
     # --- Get the last 12 months ---
     last_12_months = (
-        df_classified["report_month"]
+        pd.to_datetime(df_classified["report_month"], format="%b-%y")
         .sort_values()
         .drop_duplicates()
         .iloc[-12:]
+        .dt.strftime("%b-%y")
         .tolist()
     )
     df_last_12 = df_classified[df_classified["report_month"].isin(last_12_months)]
@@ -52,10 +81,11 @@ def prepare_data(file_path):
 
     # --- Ensure by_month_df is sorted and only last 12 months ---
     last_12_months_sorted = (
-        by_month_df["report_month"]
-        .sort_values(key=lambda x: pd.to_datetime(x, format="%b-%y"))
+        pd.to_datetime(by_month_df["report_month"], format="%b-%y")  # Convert strings to datetime
+        .sort_values()
         .drop_duplicates()
         .iloc[-12:]
+        .dt.strftime("%b-%y")  # Format back to string
         .tolist()
     )
     by_month_df_12 = by_month_df[by_month_df["report_month"].isin(last_12_months_sorted)]
@@ -105,5 +135,5 @@ if __name__ == "__main__":
 
     else:
         # GUI mode
-        main()        
-       
+        main()
+

@@ -1,3 +1,22 @@
+# ---------------------------------------------------------------
+# test_summary_generator.py
+#
+# Purpose:
+#   Unit tests for summary and late work order logic in scripts/summary_generator.py.
+#
+# Requirements:
+#   - Input: pandas DataFrame with sample work order data for each test case.
+#   - Dependencies: pandas, generate_monthly_summary, get_extreme_late_work_orders from scripts/summary_generator.
+#
+# Output:
+#   - Asserts correct summary counts and late work order identification.
+#   - Prints a success message if all tests pass.
+#
+# Notes:
+#   - Run with: python tests/test_summary_generator.py or use pytest for automated testing.
+#   - Ensures summary logic is robust for monthly, canceled, completed, open, and missed work orders.
+# ---------------------------------------------------------------
+
 # tests/test_summary_generator.py
 
 import pandas as pd

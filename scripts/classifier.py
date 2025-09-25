@@ -1,3 +1,22 @@
+# ---------------------------------------------------------------
+# classifier.py
+#
+# Purpose:
+#   Provides functions to classify work orders based on status, dates, and type.
+#
+# Requirements:
+#   - Input: pandas DataFrame with columns: 'status', 'target_date', 'actual_finish', 'grace_date'.
+#   - Libraries: pandas.
+#
+# Output:
+#   - Adds a 'wo_class' column to the DataFrame with values: 'canceled', 'open', 'on_time', or 'missed'.
+#   - Optionally, can classify work order type (e.g., PM, CA, RQL, Other).
+#
+# Notes:
+#   - Used by analysis and reporting modules to segment work orders for summary and charts.
+#   - Main functions: classify_work_order(row), apply_classification(df).
+# ---------------------------------------------------------------
+
 # scripts/classifier.py
 
 import pandas as pd

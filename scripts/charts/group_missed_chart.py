@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------
+# group_missed_chart.py
+#
+# Purpose:
+#   Generates bar charts visualizing missed work orders by group,
+#   including both count and percentage charts for reporting.
+#
+# Requirements:
+#   - Input: Dictionary with keys 'groups', 'missed', and/or 'missed_percent'.
+#   - Libraries: matplotlib for plotting.
+#   - Output path: Filepath to save the generated chart image (PNG, JPG, etc.).
+#
+# Output:
+#   - Saves chart images to the specified output path.
+#   - Returns the filepath to the saved chart image for use in reports or presentations.
+#
+# Notes:
+#   - Used by reporting modules to visualize group-level missed work order metrics.
+#   - Functions: build_group_missed_chart (count), build_group_missed_percent_chart (percentage).
+# ---------------------------------------------------------------
+
 # scripts/charts/group_missed_chart.py
 
 import matplotlib.pyplot as plt

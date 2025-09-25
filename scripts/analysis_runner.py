@@ -1,9 +1,24 @@
-# scripts/analysis_runner.py
+# ---------------------------------------------------------------
+# analysis_runner.py
+#
+# Purpose:
+#   Runs work order analysis from cleaned data and provides summary metrics.
+#
+# Requirements:
+#   - Input: 'cleaned_work_orders.csv' in 'data/processed' directory.
+#   - Columns: Must include 'target_date' (date), 'OrderType', and other relevant fields.
+#
+# Output:
+#   - Prints summary metrics to console.
+#   - (Future) Can export summary to file via export_summary().
+#   - Used in CLI mode with options for summary or governance analysis.
+# ---------------------------------------------------------------
 
 import argparse
 import logging
 import os
 import pandas as pd
+from datetime import datetime, timedelta
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,13 +33,22 @@ def load_cleaned_data(filepath="data/processed/cleaned_work_orders.csv"):
     return pd.read_csv(filepath)
 
 def generate_summary(df):
-    # Generates a summary of work orders
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")  # Ensure it's datetime
+    # Ensure target_date is datetime
+    df["target_date"] = pd.to_datetime(df["target_date"], format="%d%b%Y", errors="coerce")
+
+    # Use the latest date in your data as the "current" month
+    latest_date = df["target_date"].max()
+    first_of_current = pd.to_datetime(latest_date).replace(day=1)
+    first_of_previous = (first_of_current - timedelta(days=1)).replace(day=1)
+
+    # Only include work orders due between first_of_previous (exclusive) and first_of_current (inclusive)
+    due_for_month = df[(df["target_date"] > first_of_previous) & (df["target_date"] <= first_of_current)].shape[0]
 
     return {
         "total_orders": len(df),
-        "by_type": df["OrderType"].value_counts().to_dict(),
-        "monthly_trend": df.groupby(df["Date"].dt.to_period("M")).size().to_dict()
+        "by_type": df["OrderType"].value_counts().to_dict() if "OrderType" in df.columns else {},
+        "monthly_trend": df.groupby(df["target_date"].dt.to_period("M")).size().to_dict(),
+        "due_for_month": due_for_month
     }
 
 def run_analysis(filepath="data/processed/cleaned_work_orders.csv", dry_run=False):

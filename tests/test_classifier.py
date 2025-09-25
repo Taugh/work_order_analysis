@@ -1,3 +1,22 @@
+# ---------------------------------------------------------------
+# test_classifier.py
+#
+# Purpose:
+#   Unit tests for the work order classification logic in scripts/classifier.py.
+#
+# Requirements:
+#   - Input: pandas DataFrames with sample work order data for each test case.
+#   - Dependencies: pandas, apply_classification from scripts/classifier.
+#
+# Output:
+#   - Asserts correct classification for canceled, open, on_time, and missed work orders.
+#   - Prints a success message if all tests pass.
+#
+# Notes:
+#   - Run with: python tests/test_classifier.py or use pytest for automated testing.
+#   - Ensures classifier logic is robust against different status and date scenarios.
+# ---------------------------------------------------------------
+
 # tests/test_classifier.py
 
 import pandas as pd

@@ -1,3 +1,27 @@
+# ---------------------------------------------------------------
+# summary_generator.py
+#
+# Purpose:
+#   Generates summary tables and breakdowns for work order analysis,
+#   including monthly, group, and governance-level metrics.
+#
+# Requirements:
+#   - Input: pandas DataFrame with classified work order data.
+#   - Columns: Must include 'target_date', 'wo_class', 'group', and other relevant fields.
+#   - Config: REPORT_DIR for output paths.
+#
+# Output:
+#   - Returns summary DataFrames for monthly, group, and governance views.
+#   - Exports summary and late work order reports to Excel.
+#   - Used by CLI, GUI, and reporting modules for analysis and export.
+#
+# Notes:
+#   - Functions: generate_monthly_summary, export_summary_to_excel, get_extreme_late_work_orders,
+#     generate_governance_overview, export_governance_report, generate_pm_breakdowns,
+#     generate_monthly_governance_overview, generate_pm_governance_breakdown, generate_group_governance_report.
+#   - Handles sorting, aggregation, and formatting for reporting.
+# ---------------------------------------------------------------
+
 # scripts/summary_generator.py
 
 import os
@@ -9,8 +33,7 @@ def generate_monthly_summary(df):
      # Ensure wo_class and report_month columns exist
      # wo_class is the classification each work order is placed into (canceled, completed, missed, or open)
 
-    if "report_month" not in df.columns or "wo_class" not in df.columns:  # wo_class is the
-        # classification each work order is placed in
+    if "report_month" not in df.columns or "wo_class" not in df.columns:  # wo_class is the classification each work order is placed in
         raise ValueError("Missing 'report_month' or 'wo_class'. Run classfier first.")
 
     summary = df.groupby("report_month")["wo_class"].value_counts().unstack(fill_value=0)
@@ -32,7 +55,8 @@ def generate_monthly_summary(df):
          })
 
     columns_to_sum = ["Completed", "Missed", "Still Open", "Due", "Canceled"]
-    summary.loc["Grand Total", columns_to_sum] = summary[columns_to_sum].dropna(axis=1, how="all").sum()
+    existing_columns = [col for col in columns_to_sum if col in summary.columns]
+    summary.loc["Grand Total", existing_columns] = summary[existing_columns].dropna(axis=1, how="all").sum()
     summary.loc["Grand Total", "Completion %"] = (
         summary.loc["Grand Total", "Completed"] / summary.loc["Grand Total", "Due"]
     ) * 100
@@ -50,7 +74,7 @@ def generate_monthly_summary(df):
 
     # Sort only the actual months
     summary_no_total = summary_no_total.sort_values(
-        "Month", key=lambda x: pd.to_datetime(x.str.strip(), format="%Y-%m"), ignore_index=True
+        "Month", key=lambda x: pd.to_datetime(x.str.strip(), format="%b-%y"), ignore_index=True
     )
 
     # Concatenate the sorted months and the Grand Total row

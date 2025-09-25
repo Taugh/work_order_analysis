@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------
+# slide_generator.py
+#
+# Purpose:
+#   Generates and updates PowerPoint slides for work order governance reporting.
+#
+# Requirements:
+#   - Input: pandas DataFrames containing summary, group, and monthly work order data.
+#   - PowerPoint template: 'data/templates/governance_slide_template.pptx' with named charts/shapes.
+#   - DataFrames must include columns such as 'Month', 'Due', 'Completed', 'Missed', 'group', etc.
+#
+# Output:
+#   - Creates and updates slides with summary metrics, charts, and tables.
+#   - Saves the final presentation to 'outputs/presentations/governance_slide.pptx' (or specified path).
+#
+# Notes:
+#   - Functions are provided for both creating new slides and updating existing charts/tables.
+#   - All chart and table updates require matching shape/chart names in the PowerPoint template.
+#   - Designed for use in both CLI and GUI workflows.
+# ---------------------------------------------------------------
+
 # scripts/slide_generator.py
 
 import os
@@ -120,14 +141,23 @@ def update_governance_slide(summary_df, prs, slide_index=0):
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = RGBColor(220, 235, 250)
 
-    # Sort by month to get the most recent
-    summary_df_sorted = summary_df.sort_values("Month", key=lambda x: pd.to_datetime(x, format="%b-%y"), ignore_index=True)
+    # --- FIX: Filter out "Grand Total" before sorting ---
+    summary_df_no_total = summary_df[summary_df["Month"] != "Grand Total"]
+    summary_df_sorted = summary_df_no_total.sort_values(
+        "Month", key=lambda x: pd.to_datetime(x, format="%b-%y"), ignore_index=True
+    )
+    # Optionally, add the Grand Total row back if needed
+    grand_total_row = summary_df[summary_df["Month"] == "Grand Total"]
+    if not grand_total_row.empty:
+        summary_df_sorted = pd.concat([summary_df_sorted, grand_total_row], ignore_index=True)
+
     current_month_row = summary_df_sorted.iloc[-1]
 
     # YTD: filter for current year only
+    summary_df_no_total = summary_df_sorted[summary_df_sorted["Month"] != "Grand Total"]
+    summary_df_no_total["year"] = summary_df_no_total["Month"].str[-2:].astype(int)
     current_year = datetime.now().year % 100
-    summary_df_sorted["year"] = summary_df_sorted["Month"].str[-2:].astype(int)
-    ytd_df = summary_df_sorted[summary_df_sorted["year"] == current_year]
+    ytd_df = summary_df_no_total[summary_df_no_total["year"] == current_year]
     ytd_row = ytd_df.drop(columns=["Month", "year"]).sum(numeric_only=True)
     completion_pct = 100 * ytd_row["Completed"] / ytd_row["Due"] if ytd_row["Due"] else 0
 

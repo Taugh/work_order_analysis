@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------
+# data_loader.py
+#
+# Purpose:
+#   Loads raw work order data from a specified file, normalizes column names,
+#   converts date columns, and prepares a clean DataFrame for analysis.
+#
+# Requirements:
+#   - Input: Excel (.xlsx) or CSV file containing raw work order data.
+#   - Config: COLUMN_MAP for column normalization, RAW_DATA_DIR for default paths.
+#   - Libraries: pandas, pathlib.
+#
+# Output:
+#   - Returns a pandas DataFrame with normalized columns and converted date fields.
+#   - Adds a 'report_month' column as a pandas Period for monthly grouping.
+#
+# Notes:
+#   - Used by analysis and classification modules as the first step in the workflow.
+#   - Handles both Excel and CSV formats.
+# ---------------------------------------------------------------
+
 # scripts/data_loader.py
 
 import pandas as pd
@@ -5,36 +26,25 @@ from pathlib import Path
 from config.settings import RAW_DATA_DIR, COLUMN_MAP
 
 def load_work_order_files(file_path):
-    """A clean and extensible data loader that reads all Excel files in
-    your '/data/raw' directory, normalizes the column names, converts
-    dates, and returns a clean DataFrame ready for classification and
-    analysis."""
+    """Loads a single file specified by file_path, normalizes columns, converts dates, and returns a clean DataFrame."""
 
-    all_files = list(Path(RAW_DATA_DIR).glob("*.xlsx"))
-    if not all_files:
-        raise FileNotFoundError(f"No Excel files found in {RAW_DATA_DIR}")
+    # Load the file based on its extension
+    if file_path.endswith('.xlsx'):
+        df = pd.read_excel(file_path, engine="openpyxl")
+    else:
+        df = pd.read_csv(file_path)
 
-    dfs = []
+    # Normalize column names
+    df = df.rename(columns=COLUMN_MAP)
 
-    for file in all_files:
-        df = pd.read_excel(file, engine="openpyxl")
+    # Convert date columns
+    for col in ["target_date", "actual_finish", "finish_no_later", "report_date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
 
-        # Normalize column names
-        df = df.rename(columns=COLUMN_MAP)
+    # Add report month column
+    df["report_month"] = df["target_date"].dt.to_period("M")
 
-        # Convert date columns
-        for col in ["target_date", "actual_finish", "finish_no_later", "report_date"]:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
 
-        # Add report month column
-        df["report_month"] = df["target_date"].dt.to_period("M")
-
-        dfs.append(df)
-            # After loading
-    # Combine all files
-    combined_df = pd.concat(dfs, ignore_index=True)
-   ## print(combined_df.columns)   # Used for debugging
-    return combined_df
-    
 

@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------
+# chart_builder.py
+#
+# Purpose:
+#   Builds and exports charts for work order analysis, including Excel combo charts
+#   and PowerPoint slide integration for preventive maintenance trends.
+#
+# Requirements:
+#   - Input: pandas DataFrame (by_month_df) with columns: 'report_month', 'missed', 'completed', 'generated'.
+#   - Libraries: pandas, xlsxwriter, pptx.
+#   - Output paths: Excel file for chart data and image, PowerPoint file for slides.
+#
+# Output:
+#   - Exports a combo chart (bar + line) to Excel in 'outputs/reports/pm_chart.xlsx'.
+#   - Adds a slide with a PM chart image to a PowerPoint presentation.
+#
+# Notes:
+#   - Used by reporting modules to visualize monthly preventive maintenance metrics.
+#   - Functions: export_chart_to_excel (Excel chart), create_missed_by_month_slide (PowerPoint slide).
+# ---------------------------------------------------------------
+
 # scripts/chart_builder.py
 
 from pptx.util import Inches
