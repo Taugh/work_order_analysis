@@ -119,6 +119,7 @@ if __name__ == "__main__":
 
             print("by_month_df_12:\n", trend_df)
             print("by_group_df:\n", by_group_df)
+            by_group_df = by_group_df[by_group_df["missed"] > 0]
             create_full_governance_deck(summary, by_group_df, trend_df)
         except Exception as e:
             print(f"Error: {e}")

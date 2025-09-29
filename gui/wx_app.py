@@ -136,6 +136,7 @@ class WorkOrderDashboard(wx.Frame):
                 if report_choice == "Monthly Summary":
                     export_summary_to_excel(summary, late_df, filename="monthly_summary.xlsx")
                 elif report_choice == "Governance Overview":
+                    by_group_df = by_group_df[by_group_df["missed"] > 0]
                     create_full_governance_deck(summary, by_group_df, trend_df)
                 else:
                     raise ValueError(f"Unknown report: {report_choice}")
