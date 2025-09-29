@@ -34,12 +34,12 @@ def load_cleaned_data(filepath="data/processed/cleaned_work_orders.csv"):
 
 def generate_summary(df):
     # Ensure target_date is datetime
-    df["target_date"] = pd.to_datetime(df["target_date"], format="%d%b%Y", errors="coerce")
+    df["target_date"] = pd.to_datetime(df["target_date"], errors="coerce")
 
-    # Use the latest date in your data as the "current" month
-    latest_date = df["target_date"].max()
-    first_of_current = pd.to_datetime(latest_date).replace(day=1)
-    first_of_previous = (first_of_current - timedelta(days=1)).replace(day=1)
+    # Use the current calendar month, not the latest date in your data
+    today = pd.Timestamp.today()
+    first_of_current = today.replace(day=1)
+    first_of_previous = (first_of_current - pd.DateOffset(months=1)).replace(day=1)
 
     # Only include work orders due between first_of_previous (exclusive) and first_of_current (inclusive)
     due_for_month = df[(df["target_date"] > first_of_previous) & (df["target_date"] <= first_of_current)].shape[0]

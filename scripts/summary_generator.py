@@ -272,3 +272,28 @@ def generate_group_governance_report(df):
 
     return by_group
 
+def generate_12_month_trend(df):
+    # Ensure target_date is datetime
+    df["target_date"] = pd.to_datetime(df["target_date"], errors="coerce")
+
+    today = pd.Timestamp.today()
+    first_of_current = today.replace(day=1)
+    # Build boundaries for the last 12 complete months (ending with previous month)
+    month_starts = [first_of_current - pd.DateOffset(months=i) for i in range(12, 0, -1)]
+    month_starts.append(first_of_current)  # Add current month start for the last boundary
+
+    results = []
+    for i in range(12):
+        start = month_starts[i]
+        end = month_starts[i+1]
+        mask = (df["target_date"] > start) & (df["target_date"] <= end)
+        month_df = df[mask]
+        results.append({
+            "report_month": start.strftime("%b-%y"),
+            "missed": (month_df["wo_class"] == "missed").sum() if "wo_class" in month_df.columns else None,
+            "completed": (month_df["wo_class"] == "on_time").sum() if "wo_class" in month_df.columns else None,
+            "generated": len(month_df)
+        })
+
+    return pd.DataFrame(results)
+

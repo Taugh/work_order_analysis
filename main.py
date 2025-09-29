@@ -5,28 +5,9 @@
 #   Entry point for the work order analysis application.
 #   Supports both CLI and GUI modes for loading, classifying, analyzing,
 #   and reporting work order data.
-#
-# Requirements:
-#   - Input: Excel (.xlsx) or CSV file containing raw work order data.
-#   - Dependencies: wxPython for GUI, pandas, and all scripts in /scripts and /gui.
-#   - Functions: Uses data_loader, classifier, summary_generator, slide_generator, wx_app.
-#
-# Output:
-#   - CLI mode: Prints summary and group/monthly data to console, exports Excel and PowerPoint reports to /outputs.
-#   - GUI mode: Launches dashboard for interactive analysis and export.
-#
-# Workflow:
-#   - Loads and cleans input data.
-#   - Applies classification logic.
-#   - Generates summaries and breakdowns.
-#   - Exports results to Excel and PowerPoint.
-#   - In GUI mode, provides user feedback and export options.
 # ---------------------------------------------------------------
 
-# main.py
-
 import sys
-import wx
 import pandas as pd
 
 from scripts.data_loader import load_work_order_files
@@ -37,103 +18,115 @@ from scripts.summary_generator import (
     export_summary_to_excel,
 )
 from scripts.slide_generator import create_full_governance_deck
-from gui.wx_app import WorkOrderDashboard
+from scripts.summary_generator import generate_12_month_trend
 
-def main():
-    app = wx.App(False)
-    dashboard = WorkOrderDashboard(None, title="Work Order Analysis Dashboard")
-    app.MainLoop()
+print("main.py started")
 
 def prepare_data(file_path):
+    # Load and classify data
+    print("prepare_data called with", file_path)
+    print("Starting prepare_data")  # Debug print
     df_cleaned = load_work_order_files(file_path)
     print("Loaded raw data shape:", df_cleaned.shape)
-    print(df_cleaned.head())
     df_classified = apply_classification(df_cleaned)
     cleaned_path = "data/processed/cleaned_work_orders.csv"
     df_classified.to_csv(cleaned_path, index=False)
+    
 
-    df_classified["report_month"] = pd.to_datetime(df_classified["target_date"], errors="coerce").dt.strftime("%b-%y")
+    # Ensure target_date is datetime
+    df_classified["target_date"] = pd.to_datetime(df_classified["target_date"], errors="coerce")
 
-    # --- Get the last 12 months ---
-    last_12_months = (
-        pd.to_datetime(df_classified["report_month"], format="%b-%y")
-        .sort_values()
-        .drop_duplicates()
-        .iloc[-12:]
-        .dt.strftime("%b-%y")
-        .tolist()
-    )
-    df_last_12 = df_classified[df_classified["report_month"].isin(last_12_months)]
+    # --- Build last 12 complete months using true date boundaries ---
+    trend_df = generate_12_month_trend(df_classified)
+    print("trend_df created")
+    print(trend_df)
+    print(trend_df["report_month"])
 
-    # 📊 Generate and export summaries for last 12 months
-    summary = generate_monthly_summary(df_last_12)
-
-    by_month_df = (
-        df_last_12
-        .groupby("report_month")
-        .agg(
-            missed=("wo_class", lambda x: (x == "missed").sum()),
-            completed=("wo_class", lambda x: (x == "on_time").sum()),
-            generated=("wo_class", "count")
-        )
-        .reset_index()
-    )
-
-    # --- Ensure by_month_df is sorted and only last 12 months ---
-    last_12_months_sorted = (
-        pd.to_datetime(by_month_df["report_month"], format="%b-%y")  # Convert strings to datetime
-        .sort_values()
-        .drop_duplicates()
-        .iloc[-12:]
-        .dt.strftime("%b-%y")  # Format back to string
-        .tolist()
-    )
-    by_month_df_12 = by_month_df[by_month_df["report_month"].isin(last_12_months_sorted)]
-
-    # --- Use only the newest month for group charts ---
-    newest_month = df_classified["report_month"].max()
-    df_newest = df_classified[df_classified["report_month"] == newest_month]
+    # --- Use only the previous month for group charts ---
+    today = pd.Timestamp.today()
+    first_of_current = today.replace(day=1)
+    first_of_previous = (first_of_current - pd.DateOffset(months=1)).replace(day=1)
+    mask = (df_classified["target_date"] > first_of_previous) & (df_classified["target_date"] <= first_of_current)
+    df_prev_month = df_classified[mask]
 
     by_group_df = (
-        df_newest
+        df_prev_month
         .groupby("group")
         .agg(
             missed=("wo_class", lambda x: (x == "missed").sum()),
             completed=("wo_class", lambda x: (x == "on_time").sum()),
             generated=("wo_class", "count"),
-            missed_percent=("wo_class", lambda x: 100 * (x == "missed").sum() / len(x)),
+            missed_percent=("wo_class", lambda x: 100 * (x == "missed").sum() / len(x) if len(x) else 0),
             still_open=("wo_class", lambda x: (x == "open").sum())
         )
         .reset_index()
     )
 
+    # For summary and late_df, use only the last 12 months' data (from trend_df boundaries)
+    # Use the same month boundaries as trend_df for summary and late_df
+    today = pd.Timestamp.today()
+    first_of_current = today.replace(day=1)
+    month_starts = [first_of_current - pd.DateOffset(months=i) for i in range(12, 0, -1)]
+    month_starts.append(first_of_current)
+
+    month_dfs = []
+    for i in range(12):
+        start = month_starts[i]
+        end = month_starts[i+1]
+        mask = (df_classified["target_date"] > start) & (df_classified["target_date"] <= end)
+        month_df = df_classified[mask].copy()
+        month_df["report_month"] = start.strftime("%b-%y")
+        month_dfs.append(month_df)
+
+    df_last_12 = pd.concat(month_dfs, ignore_index=True)
+
+    summary = generate_monthly_summary(df_last_12)
     late_df = get_extreme_late_work_orders(df_last_12)
-    return summary, by_group_df, by_month_df_12, late_df
+    return summary, by_group_df, trend_df, late_df
+
+def main():
+    import wx
+    from gui.wx_app import WorkOrderDashboard
+
+    def on_file_selected(file_path):
+        # This should use the same logic as CLI
+        summary, by_group_df, trend_df, late_df = prepare_data(file_path)
+        # Pass these to your dashboard for display
+
+    app = wx.App(False)
+    dashboard = WorkOrderDashboard(None, title="Work Order Analysis Dashboard",  on_file_selected=on_file_selected)
+    app.MainLoop()
 
 if __name__ == "__main__":
+    print("Running as __main__")
     if len(sys.argv) > 1:
+        print("CLI mode detected")
         # CLI mode
         file_path = sys.argv[1]
+        print("File path argument:", file_path)
+        try:
+            summary, by_group_df, trend_df, late_df = prepare_data(file_path)
+            export_summary_to_excel(summary, late_df)
 
-        summary, by_group_df, by_month_df_12, late_df = prepare_data(file_path)
-        export_summary_to_excel(summary, late_df)
+            # Rename columns for summary_df to match slide update expectations
+            summary = summary.rename(columns={
+                "due": "Due",
+                "completed": "Completed",
+                "missed": "Missed",
+                "completion_pct": "Completion %",
+                "canceled": "Canceled"
+            })
 
-        # Rename columns for summary_df to match slide update expectations
-        summary = summary.rename(columns={
-            "due": "Due",
-            "completed": "Completed",
-            "missed": "Missed",
-            "completion_pct": "Completion %",
-            "canceled": "Canceled"
-        })
-
-        
-
-        print("by_month_df_12:\n", by_month_df_12)
-        print("by_group_df:\n", by_group_df)
-        create_full_governance_deck(summary, by_group_df, by_month_df_12)
-
+            print("by_month_df_12:\n", trend_df)
+            print("by_group_df:\n", by_group_df)
+            create_full_governance_deck(summary, by_group_df, trend_df)
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+        input("Press Enter to exit...")
     else:
         # GUI mode
         main()
+
 

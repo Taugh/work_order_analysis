@@ -1,5 +1,9 @@
 # scripts/printer.py
 
+import pandas as pd
+import os
+from config import REPORT_DIR
+
 def print_centered_summary(df):
     columns = ["   Month", "Due", "Completed", "Missed", "Open", "Canceled", "Completion %"]
     widths = [20, 15, 15, 12, 15, 20, 20]
