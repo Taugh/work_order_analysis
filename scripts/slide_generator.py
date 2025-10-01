@@ -151,11 +151,27 @@ def update_governance_slide(summary_df, prs, slide_index=0):
     if not grand_total_row.empty:
         summary_df_sorted = pd.concat([summary_df_sorted, grand_total_row], ignore_index=True)
 
-    current_month_row = summary_df_sorted.iloc[-1]
+    today = pd.Timestamp.today()
+    first_of_current = today.replace(day=1)
+    first_of_previous = (first_of_current - pd.DateOffset(months=1)).replace(day=1)
+    current_month_label = first_of_previous.strftime("%b-%y")
+    current_month_row = summary_df_sorted[summary_df_sorted["Month"] == current_month_label].iloc[0]
 
     # YTD: filter for current year only
     summary_df_no_total = summary_df_sorted[summary_df_sorted["Month"] != "Grand Total"]
-    summary_df_no_total["year"] = summary_df_no_total["Month"].str[-2:].astype(int)
+
+    def safe_year_extract(month_str):
+        try:
+            if pd.isna(month_str) or len(str(month_str)) < 2:
+                return None
+            return int(str(month_str)[-2:])
+        except (ValueError, TypeError):
+            print(f"Warning: Could not extract year from '{month_str}'")
+            return None
+
+    summary_df_no_total["year"] = summary_df_no_total["Month"].apply(safe_year_extract)
+    summary_df_no_total = summary_df_no_total.dropna(subset=["year"])
+    
     current_year = datetime.now().year % 100
     ytd_df = summary_df_no_total[summary_df_no_total["year"] == current_year]
     ytd_row = ytd_df.drop(columns=["Month", "year"]).sum(numeric_only=True)
@@ -254,20 +270,22 @@ def update_missed_still_open_chart(prs, by_group_df, slide_index=3):
             shape.chart.replace_data(chart_data)
             print(f"Updating chart: {shape.name}")
 
-def create_full_governance_deck(summary_df, by_group_df, by_month_df, output_path="outputs/presentations/governance_slide.pptx"):
+def create_full_governance_deck(summary_df, by_group_df, by_month_df):
     print("create_full_governance_deck called")
     print("summary_df columns:", summary_df.columns)
+    
+    # Define output_path
+    output_path = "outputs/presentations/governance_slide.pptx"
+    
     prs = Presentation(r"data\templates\governance_slide_template.pptx")
-    update_governance_slide(summary_df, prs, slide_index=0)  # Summary slide
-    update_missed_by_month_chart(prs, by_month_df, slide_index=1)  # PM Missed Chart
-    update_missed_by_group_charts(prs, by_group_df, slide_index=2)  # Group charts
-    update_missed_still_open_chart(prs, by_group_df, slide_index=3)  # Still Open chart
+    update_governance_slide(summary_df, prs, slide_index=0)
+    update_missed_by_month_chart(prs, by_month_df, slide_index=1)
+    update_missed_by_group_charts(prs, by_group_df, slide_index=2)
+    update_missed_still_open_chart(prs, by_group_df, slide_index=3)
+    
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     prs.save(output_path)
     print(f"✅ Full governance deck saved to: {output_path}")
-    for slide_idx, slide in enumerate(prs.slides):
-        for i, shape in enumerate(slide.shapes):
-            print(f"Slide {slide_idx} - Shape {i}: type={shape.shape_type}, name={getattr(shape, 'name', None)}")
 
 
 

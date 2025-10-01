@@ -31,7 +31,6 @@ def prepare_data(file_path):
     df_classified = apply_classification(df_cleaned)
     cleaned_path = "data/processed/cleaned_work_orders.csv"
     df_classified.to_csv(cleaned_path, index=False)
-    
 
     # Ensure target_date is datetime
     df_classified["target_date"] = pd.to_datetime(df_classified["target_date"], errors="coerce")
@@ -62,13 +61,11 @@ def prepare_data(file_path):
         .reset_index()
     )
 
-    # For summary and late_df, use only the last 12 months' data (from trend_df boundaries)
-    # Use the same month boundaries as trend_df for summary and late_df
-    today = pd.Timestamp.today()
-    first_of_current = today.replace(day=1)
+    # Build month boundaries
     month_starts = [first_of_current - pd.DateOffset(months=i) for i in range(12, 0, -1)]
     month_starts.append(first_of_current)
 
+    # Build last 12 months DataFrame
     month_dfs = []
     for i in range(12):
         start = month_starts[i]
@@ -77,12 +74,31 @@ def prepare_data(file_path):
         month_df = df_classified[mask].copy()
         month_df["report_month"] = start.strftime("%b-%y")
         month_dfs.append(month_df)
-
     df_last_12 = pd.concat(month_dfs, ignore_index=True)
 
     summary = generate_monthly_summary(df_last_12)
     late_df = get_extreme_late_work_orders(df_last_12)
-    return summary, by_group_df, trend_df, late_df
+
+    # Now build PM Month and YTD after summary exists
+    pm_month_label = first_of_previous.strftime("%b-%y")
+    pm_month_df = summary[summary["Month"] == pm_month_label]
+
+    current_year = today.year % 100
+    summary_with_year = summary.copy()
+    def safe_year_extract(month_str):
+        try:
+            if pd.isna(month_str) or len(str(month_str)) < 2:
+                return None
+            return int(str(month_str)[-2:])
+        except (ValueError, TypeError):
+            print(f"Warning: Could not extract year from '{month_str}'")
+            return None
+
+    summary_with_year["year"] = summary_with_year["Month"].apply(safe_year_extract)
+    summary_with_year = summary_with_year.dropna(subset=["year"])
+    ytd_df = summary_with_year[summary_with_year["year"] == current_year].drop(columns=["year"])
+
+    return summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df
 
 def main():
     import wx
@@ -90,7 +106,7 @@ def main():
 
     def on_file_selected(file_path):
         # This should use the same logic as CLI
-        summary, by_group_df, trend_df, late_df = prepare_data(file_path)
+        summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df = prepare_data(file_path)
         # Pass these to your dashboard for display
 
     app = wx.App(False)
@@ -105,7 +121,7 @@ if __name__ == "__main__":
         file_path = sys.argv[1]
         print("File path argument:", file_path)
         try:
-            summary, by_group_df, trend_df, late_df = prepare_data(file_path)
+            summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df = prepare_data(file_path)
             export_summary_to_excel(summary, late_df)
 
             # Rename columns for summary_df to match slide update expectations

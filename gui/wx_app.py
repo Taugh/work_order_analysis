@@ -130,8 +130,17 @@ class WorkOrderDashboard(wx.Frame):
         def run_report():
             try:
                 file_path = self.file_picker.GetPath()
-                summary, by_group_df, trend_df, late_df = prepare_data(file_path)
+                summary, by_group_df, trend_df, late_df, df1, df2 = prepare_data(file_path)
 
+                # Debug: Print all Month values
+                print("Month column values before filtering:", summary["Month"].tolist())
+                
+                # Remove any "Total" rows from summary before processing
+                summary = summary[~summary["Month"].str.contains("Total", na=False)]
+                
+                # Debug: Print Month values after filtering
+                print("Month column values after filtering:", summary["Month"].tolist())
+                
                 report_choice = self.report_type.GetValue()
                 if report_choice == "Monthly Summary":
                     export_summary_to_excel(summary, late_df, filename="monthly_summary.xlsx")
@@ -143,6 +152,7 @@ class WorkOrderDashboard(wx.Frame):
 
                 wx.CallAfter(self.status_text.SetLabel, f"📊 {report_choice} exported successfully.")
             except Exception as err:
+                print(f"Full error: {err}")  # This will show the full error in console
                 wx.CallAfter(self.status_text.SetLabel, f"❌ Error: {err}")
 
         threading.Thread(target=run_report).start()
