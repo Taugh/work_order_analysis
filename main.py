@@ -77,7 +77,11 @@ def prepare_data(file_path):
     df_last_12 = pd.concat(month_dfs, ignore_index=True)
 
     summary = generate_monthly_summary(df_last_12)
-    late_df = get_extreme_late_work_orders(df_last_12)
+    late_df = get_extreme_late_work_orders(df_classified)
+    # Add debugging:
+    print(f"Late work orders found: {len(late_df)}")
+    print("Late work orders preview:")
+    print(late_df[['work_order', 'target_date', 'status', 'group']].head(15))
 
     # Now build PM Month and YTD after summary exists
     pm_month_label = first_of_previous.strftime("%b-%y")
@@ -98,15 +102,15 @@ def prepare_data(file_path):
     summary_with_year = summary_with_year.dropna(subset=["year"])
     ytd_df = summary_with_year[summary_with_year["year"] == current_year].drop(columns=["year"])
 
-    return summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df
+    return summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified 
 
 def main():
     import wx
     from gui.wx_app import WorkOrderDashboard
 
     def on_file_selected(file_path):
-        # This should use the same logic as CLI
-        summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df = prepare_data(file_path)
+        # FIX: This should use the same logic as CLI - unpack all 7 values
+        summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified = prepare_data(file_path)
         # Pass these to your dashboard for display
 
     app = wx.App(False)
@@ -121,7 +125,8 @@ if __name__ == "__main__":
         file_path = sys.argv[1]
         print("File path argument:", file_path)
         try:
-            summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df = prepare_data(file_path)
+            # FIX: Unpack all 7 return values including df_classified
+            summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified = prepare_data(file_path)
             export_summary_to_excel(summary, late_df)
 
             # Rename columns for summary_df to match slide update expectations
@@ -136,7 +141,8 @@ if __name__ == "__main__":
             print("by_month_df_12:\n", trend_df)
             print("by_group_df:\n", by_group_df)
             by_group_df = by_group_df[by_group_df["missed"] > 0]
-            create_full_governance_deck(summary, by_group_df, trend_df)
+            # FIX: Now df_classified is properly passed to the function
+            create_full_governance_deck(summary, by_group_df, trend_df, df_classified, late_df)
         except Exception as e:
             print(f"Error: {e}")
             import traceback

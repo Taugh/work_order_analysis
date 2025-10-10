@@ -130,29 +130,34 @@ class WorkOrderDashboard(wx.Frame):
         def run_report():
             try:
                 file_path = self.file_picker.GetPath()
-                summary, by_group_df, trend_df, late_df, df1, df2 = prepare_data(file_path)
+                # FIX: Add df_classified to the return values
+                summary, by_group_df, trend_df, late_df, df1, df2, df_classified = prepare_data(file_path)
 
-                # Debug: Print all Month values
-                print("Month column values before filtering:", summary["Month"].tolist())
-                
-                # Remove any "Total" rows from summary before processing
-                summary = summary[~summary["Month"].str.contains("Total", na=False)]
-                
-                # Debug: Print Month values after filtering
-                print("Month column values after filtering:", summary["Month"].tolist())
+                include_late_orders = self.include_late.GetValue()
                 
                 report_choice = self.report_type.GetValue()
                 if report_choice == "Monthly Summary":
-                    export_summary_to_excel(summary, late_df, filename="monthly_summary.xlsx")
+                    # Include late orders in Excel if checkbox is checked
+                    late_data = late_df if include_late_orders else None
+                    export_summary_to_excel(summary, late_data, filename="monthly_summary.xlsx")
                 elif report_choice == "Governance Overview":
                     by_group_df = by_group_df[by_group_df["missed"] > 0]
-                    create_full_governance_deck(summary, by_group_df, trend_df)
+                    
+                    # Pass late_df when checkbox is checked
+                    late_data = late_df if include_late_orders else None
+                    # FIX: Add df_classified parameter to the function call
+                    create_full_governance_deck(summary, by_group_df, trend_df, df_classified, late_data)
+                                    
+                    # If checkbox is checked, could add late orders to a separate slide
+                    if include_late_orders and not late_df.empty:
+                        # Could extend governance deck with late orders slide
+                        pass
                 else:
                     raise ValueError(f"Unknown report: {report_choice}")
 
                 wx.CallAfter(self.status_text.SetLabel, f"📊 {report_choice} exported successfully.")
             except Exception as err:
-                print(f"Full error: {err}")  # This will show the full error in console
+                print(f"Full error: {err}")
                 wx.CallAfter(self.status_text.SetLabel, f"❌ Error: {err}")
 
         threading.Thread(target=run_report).start()
