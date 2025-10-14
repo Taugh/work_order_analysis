@@ -586,23 +586,39 @@ def update_missed_still_open_chart(prs, by_group_df, slide_index=4):  # Updated 
             shape.chart.replace_data(chart_data)
             print(f"Updating chart: {shape.name}")
 
-def create_full_governance_deck(summary_df, by_group_df, by_month_df, df_classified, late_df=None):
-    print("create_full_governance_deck called")
-    print("summary_df columns:", summary_df.columns)
+def create_full_governance_deck(summary_df, by_group_df, by_month_df, df_classified, late_df=None, filename=None):
+    """
+    Creates a comprehensive governance deck with multiple slides and analysis.
+    Updated to support custom filename with auto-generated month abbreviation.
+    """
     
-    # Define output_path
-    output_path = "outputs/presentations/governance_slide.pptx"
+    # Generate filename with previous month abbreviation if not provided
+    if filename is None:
+        today = pd.Timestamp.today()
+        previous_month = today.replace(day=1) - pd.DateOffset(months=1)
+        month_abbr = previous_month.strftime("%b")  # Three-letter abbreviation
+        filename = f"governance_slide_{month_abbr}.pptx"
+        print(f"🔍 DEBUG: Auto-generated PowerPoint filename: {filename}")
+    else:
+        print(f"🔍 DEBUG: Using provided PowerPoint filename: {filename}")
     
-    prs = Presentation(r"data\templates\governance_slide_template.pptx")
+    # Load the template
+    template_path = "data/templates/governance_slide_template.pptx"
+    if not os.path.exists(template_path):
+        print(f"❌ Template not found: {template_path}")
+        return None
+    
+    try:
+        prs = Presentation(template_path)
+    except Exception as e:
+        print(f"❌ Error loading template: {e}")
+        return None
+
     update_governance_slide(summary_df, prs, slide_index=0)
     update_missed_by_month_chart(prs, by_month_df, slide_index=1)
-    
-    # NEW: Add missed disposition chart at index 2
     update_missed_disposition_chart(prs, df_classified, slide_index=2)
-    
-    # UPDATED: Shift existing slides to new indices
-    update_missed_by_group_charts(prs, by_group_df, slide_index=3)  # Was 2, now 3
-    update_missed_still_open_chart(prs, by_group_df, slide_index=4)  # Was 3, now 4
+    update_missed_by_group_charts(prs, by_group_df, slide_index=3)
+    update_missed_still_open_chart(prs, by_group_df, slide_index=4)
     
     # If late_df is provided, also export it to Excel for presenter reference
     if late_df is not None and not late_df.empty:
@@ -612,7 +628,19 @@ def create_full_governance_deck(summary_df, by_group_df, by_month_df, df_classif
             late_df.to_excel(writer, sheet_name='Late > 90 Days', index=False)
         print(f"✅ Excel with late orders saved to: {excel_path}")
     
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    prs.save(output_path)
-    print(f"✅ Full governance deck saved to: {output_path}")
+    # Update the save path to use the custom/generated filename
+    save_path = f"outputs/presentations/{filename}"
+    
+    # Ensure the directory exists
+    os.makedirs("outputs/presentations", exist_ok=True)
+    
+    # Save with the new filename
+    try:
+        prs.save(save_path)
+        print(f"✅ Full governance deck saved to: {save_path}")
+    except Exception as e:
+        print(f"❌ Error saving PowerPoint: {e}")
+        return None
+    
+    return save_path
 

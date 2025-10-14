@@ -139,7 +139,8 @@ class WorkOrderDashboard(wx.Frame):
                 if report_choice == "Monthly Summary":
                     # Include late orders in Excel if checkbox is checked
                     late_data = late_df if include_late_orders else None
-                    export_summary_to_excel(summary, late_data, filename="monthly_summary.xlsx")
+                    export_summary_to_excel(summary, late_data)
+                    
                 elif report_choice == "Governance Overview":
                     by_group_df = by_group_df[by_group_df["missed"] > 0]
                     

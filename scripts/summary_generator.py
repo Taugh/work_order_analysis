@@ -82,26 +82,43 @@ def generate_monthly_summary(df):
 
     return summary
 
-def export_summary_to_excel(summary_df, late_df, filename="monthly_summary.xlsx"):
+def export_summary_to_excel(summary_df, late_df, filename=None):
+    # Generate filename with previous month abbreviation if not provided
+    if filename is None:
+        today = pd.Timestamp.today()
+        print(f"🔍 DEBUG: Today's date: {today}")
+        
+        # Get previous month
+        previous_month = today.replace(day=1) - pd.DateOffset(months=1)
+        print(f"🔍 DEBUG: Previous month: {previous_month}")
+        
+        month_abbr = previous_month.strftime("%b")  # Three-letter abbreviation (Jan, Feb, Mar, etc.)
+        print(f"🔍 DEBUG: Month abbreviation: {month_abbr}")
+        
+        filename = f"monthly_summary_{month_abbr}.xlsx"
+        print(f"🔍 DEBUG: Generated filename: {filename}")
+    else:
+        print(f"🔍 DEBUG: Using provided filename: {filename}")
+    
     filepath = os.path.join(REPORT_DIR, filename)
+    print(f"🔍 DEBUG: Full filepath: {filepath}")
 
     # 1) Try to delete an existing file first
-
     if os.path.exists(filepath):
         try:
             os.remove(filepath)
         except PermissionError:
             raise PermissionError(
-                    f"Cannot overwrite '{filename}'. Close it in Excel and try again."
+                f"Cannot overwrite '{filename}'. Close it in Excel and try again."
             )
 
     # 2) Write the new report
-    
     with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
         summary_df.to_excel(writer, sheet_name="Monthly Summary", index=False)
         if late_df is not None:
             late_df.to_excel(writer, sheet_name="Late >90 Days", index=False)
 
+    print(f"✅ File saved as: {filename}")
     return filepath
             
     # Use for debugging
