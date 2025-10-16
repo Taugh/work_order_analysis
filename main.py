@@ -9,108 +9,22 @@
 
 import sys
 import pandas as pd
+import wx
 
-from scripts.data_loader import load_work_order_files
-from scripts.classifier import apply_classification
-from scripts.summary_generator import (
-    generate_monthly_summary,
-    get_extreme_late_work_orders,
-    export_summary_to_excel,
-)
+# Import prepare_data from the new module
+from scripts.data_processor import prepare_data
+from scripts.summary_generator import export_summary_to_excel
 from scripts.slide_generator import create_full_governance_deck
-from scripts.summary_generator import generate_12_month_trend
 
 print("main.py started")
-
-def prepare_data(file_path):
-    # Load and classify data
-    print("prepare_data called with", file_path)
-    print("Starting prepare_data")  # Debug print
-    df_cleaned = load_work_order_files(file_path)
-    print("Loaded raw data shape:", df_cleaned.shape)
-    df_classified = apply_classification(df_cleaned)
-    cleaned_path = "data/processed/cleaned_work_orders.csv"
-    df_classified.to_csv(cleaned_path, index=False)
-
-    # Ensure target_date is datetime
-    df_classified["target_date"] = pd.to_datetime(df_classified["target_date"], errors="coerce")
-
-    # --- Build last 12 complete months using true date boundaries ---
-    trend_df = generate_12_month_trend(df_classified)
-    print("trend_df created")
-    print(trend_df)
-    print(trend_df["report_month"])
-
-    # --- Use only the previous month for group charts ---
-    today = pd.Timestamp.today()
-    first_of_current = today.replace(day=1)
-    first_of_previous = (first_of_current - pd.DateOffset(months=1)).replace(day=1)
-    mask = (df_classified["target_date"] > first_of_previous) & (df_classified["target_date"] <= first_of_current)
-    df_prev_month = df_classified[mask]
-
-    by_group_df = (
-        df_prev_month
-        .groupby("group")
-        .agg(
-            missed=("wo_class", lambda x: (x == "missed").sum()),
-            completed=("wo_class", lambda x: (x == "on_time").sum()),
-            generated=("wo_class", "count"),
-            missed_percent=("wo_class", lambda x: 100 * (x == "missed").sum() / len(x) if len(x) else 0),
-            still_open=("wo_class", lambda x: (x == "open").sum())
-        )
-        .reset_index()
-    )
-
-    # Build month boundaries
-    month_starts = [first_of_current - pd.DateOffset(months=i) for i in range(12, 0, -1)]
-    month_starts.append(first_of_current)
-
-    # Build last 12 months DataFrame
-    month_dfs = []
-    for i in range(12):
-        start = month_starts[i]
-        end = month_starts[i+1]
-        mask = (df_classified["target_date"] > start) & (df_classified["target_date"] <= end)
-        month_df = df_classified[mask].copy()
-        month_df["report_month"] = start.strftime("%b-%y")
-        month_dfs.append(month_df)
-    df_last_12 = pd.concat(month_dfs, ignore_index=True)
-
-    summary = generate_monthly_summary(df_last_12)
-    late_df = get_extreme_late_work_orders(df_classified)
-    # Add debugging:
-    print(f"Late work orders found: {len(late_df)}")
-    print("Late work orders preview:")
-    print(late_df[['work_order', 'target_date', 'status', 'group']].head(15))
-
-    # Now build PM Month and YTD after summary exists
-    pm_month_label = first_of_previous.strftime("%b-%y")
-    pm_month_df = summary[summary["Month"] == pm_month_label]
-
-    current_year = today.year % 100
-    summary_with_year = summary.copy()
-    def safe_year_extract(month_str):
-        try:
-            if pd.isna(month_str) or len(str(month_str)) < 2:
-                return None
-            return int(str(month_str)[-2:])
-        except (ValueError, TypeError):
-            print(f"Warning: Could not extract year from '{month_str}'")
-            return None
-
-    summary_with_year["year"] = summary_with_year["Month"].apply(safe_year_extract)
-    summary_with_year = summary_with_year.dropna(subset=["year"])
-    ytd_df = summary_with_year[summary_with_year["year"] == current_year].drop(columns=["year"])
-
-    return summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified 
 
 def main():
     import wx
     from gui.wx_app import WorkOrderDashboard
 
     def on_file_selected(file_path):
-        # FIX: This should use the same logic as CLI - unpack all 7 values
-        summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified = prepare_data(file_path)
+        # FIX: Unpack all 8 return values including disposition_df
+        summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified, disposition_df = prepare_data(file_path)
         # Pass these to your dashboard for display
 
     app = wx.App(False)
@@ -121,18 +35,17 @@ if __name__ == "__main__":
     print("Running as __main__")
     if len(sys.argv) > 1:
         print("CLI mode detected")
-        # CLI mode
         file_path = sys.argv[1]
         print("File path argument:", file_path)
         try:
-            # FIX: Unpack all 7 return values including df_classified
-            summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified = prepare_data(file_path)
+            # FIX: Unpack all 8 return values including disposition_df
+            summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified, disposition_df = prepare_data(file_path)
             export_summary_to_excel(summary, late_df)
 
             # Rename columns for summary_df to match slide update expectations
             summary = summary.rename(columns={
                 "due": "Due",
-                "completed": "Completed",
+                "completed": "Completed", 
                 "missed": "Missed",
                 "completion_pct": "Completion %",
                 "canceled": "Canceled"
@@ -140,9 +53,13 @@ if __name__ == "__main__":
 
             print("by_month_df_12:\n", trend_df)
             print("by_group_df:\n", by_group_df)
-            by_group_df = by_group_df[by_group_df["missed"] > 0]
-            # FIX: Now df_classified is properly passed to the function
-            create_full_governance_deck(summary, by_group_df, trend_df, df_classified, late_df)
+            print("disposition_df:\n", disposition_df)
+            
+            # Use the grouped by_group_df that was created in prepare_data
+            filtered_by_group_df = by_group_df[by_group_df["missed"] > 0]
+            
+            # FIX: Pass the correct parameters including disposition_df
+            create_full_governance_deck(trend_df, late_df, disposition_df, filtered_by_group_df, filename=None)
         except Exception as e:
             print(f"Error: {e}")
             import traceback

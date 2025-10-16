@@ -23,624 +23,718 @@
 
 import os
 from pptx import Presentation
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.enum.shapes import MSO_SHAPE
-from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
-from datetime import datetime
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.enum.chart import XL_CHART_TYPE
+from pptx.chart.data import CategoryChartData
 import pandas as pd
+import numpy as np
+from datetime import datetime
+import traceback
 
-
-def create_governance_slide(summary_df, prs):
-    print("create_governance_slide called")
-    print("summary_df columns:", summary_df.columns)
-
-    # Get most current month (last row after sorting by Month)
-    summary_df_sorted = summary_df.sort_values("Month", key=lambda x: pd.to_datetime(x, format="%b-%y"), ignore_index=True)
-    current_month_row = summary_df_sorted.iloc[-1]
-    # Year-to-date summary (sum all months)
-    ytd_row = summary_df_sorted.drop(columns=["Month"]).sum(numeric_only=True)
-    completion_pct = 100 * ytd_row["Completed"] / ytd_row["Due"] if ytd_row["Due"] else 0
-
-    # Add a new slide
-    slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only layout
-    slide.shapes.title.text = "Preventive Maintenance Summary"
-
-    # Create a rounded rectangle for the summary text
-    left = Inches(1)
-    top = Inches(1.5)
-    width = Inches(8)
-    height = Inches(2.5)
-    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-
-    # Format the shape
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = RGBColor(255, 255, 255)
-    shape.line.color.rgb = RGBColor(0, 0, 0)
-
-    # Add formatted summary text
-    text_frame = shape.text_frame
-    text_frame.clear()
-    p = text_frame.paragraphs[0]
-    p.text = (
-        f"Current Month ({current_month_row['Month']}):\n"
-        f"  Due: {current_month_row['Due']:.0f}\n"
-        f"  Completed: {current_month_row['Completed']:.0f}\n"
-        f"  Missed: {current_month_row['Missed']:.0f}\n"
-        f"  Completion %: {current_month_row['Completion %']:.1f}\n\n"
-        f"Year to Date:\n"
-        f"  Due: {ytd_row['Due']:.0f}\n"
-        f"  Completed: {ytd_row['Completed']:.0f}\n"
-        f"  Missed: {ytd_row['Missed']:.0f}\n"
-        f"  Completion %: {completion_pct:.1f}"
-    )
-    p.font.size = Pt(20)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(0, 0, 0)
-
-    return prs
-
-
-def create_missed_by_month_slide(prs, by_month_df):
-    slide_layout = prs.slide_layouts[5]
-    slide = prs.slides.add_slide(slide_layout)
-    slide.shapes.title.text = "Preventive Maintenance Missed"
-
-    chart_data = CategoryChartData()
-    chart_data.categories = by_month_df["report_month"].astype(str).tolist()
-    chart_data.add_series("Missed", by_month_df["missed"].tolist())
-    chart_data.add_series("Completed", by_month_df["completed"].tolist())
-    chart_data.add_series("Generated", by_month_df["generated"].tolist())
-
-    x, y, cx, cy = Inches(1), Inches(1.5), Inches(8), Inches(4.5)
-    chart = slide.shapes.add_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data
-    ).chart
-
-    # Try to force series 1 and 2 to be lines
-    chart.series[1].chart_type = XL_CHART_TYPE.LINE
-    chart.series[2].chart_type = XL_CHART_TYPE.LINE
-
-    chart.has_legend = True
-    chart.legend.position = 2  # Top
-    chart.category_axis.has_major_gridlines = False
-    chart.value_axis.minimum_scale = 0
-
-def create_missed_by_group_slide(prs, by_group_df):
-    slide_layout = prs.slide_layouts[5]  # Title only
-    slide = prs.slides.add_slide(slide_layout)
-    slide.shapes.title.text = "Preventive Maintenance Missed by Group"
-
-    rows, cols = by_group_df.shape
-    left, top, width, height = Inches(1), Inches(1.5), Inches(8), Inches(5)
-    table = slide.shapes.add_table(rows + 1, 2, left, top, width, height).table
-
-    # Set headers
-    table.cell(0, 0).text = "Group"
-    table.cell(0, 1).text = "Missed"
-
-    # Fill table rows
-    for i, row in by_group_df.iterrows():
-        table.cell(i + 1, 0).text = str(row["group"])
-        table.cell(i + 1, 1).text = str(row["missed"])
-
-    # Optional: format font size
-    for row in table.rows:
-        for cell in row.cells:
-            for paragraph in cell.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(12)
+def create_full_governance_deck(by_month_df, late_df, disposition_df, by_group_df, filename=None):
+    """
+    Creates a complete governance presentation with all charts and data
     
-def update_governance_slide(summary_df, prs, slide_index=0):
-    slide = prs.slides[slide_index]
-    slide_width = prs.slide_width.inches if hasattr(prs.slide_width, 'inches') else 10
-    slide_height = prs.slide_height.inches if hasattr(prs.slide_height, 'inches') else 7.5
+    Parameters:
+    - by_month_df: DataFrame with monthly trend data (from trend_df in main.py)
+    - late_df: DataFrame with late work orders
+    - disposition_df: DataFrame with disposition data (can be None)
+    - by_group_df: DataFrame with group performance data
+    - filename: Optional custom filename
+    """
+    try:
+        # FIX: Correct template filename
+        template_path = "data/templates/governance_slide_template.pptx"
+        prs = Presentation(template_path)
+        print(f"✅ Loaded template: {template_path}")
+        
+        # Generate filename if not provided
+        if filename is None:
+            current_month = datetime.now().strftime("%b")  # e.g., "Sep"
+            filename = f"governance_slide_{current_month}.pptx"
+            print(f"🔍 DEBUG: Auto-generated PowerPoint filename: {filename}")
+        
+        # FIX: Add slide 0 processing for monthly and YTD summaries
+        update_summary_slide(prs, by_month_df, late_df, slide_index=0)
+        
+        # Update all slides with data
+        update_missed_by_month_chart(prs, by_month_df, slide_index=1)
+        update_missed_disposition_chart(prs, disposition_df, slide_index=2)
+        update_group_charts(prs, by_group_df, slide_index=3)
+        
+        # Save the presentation
+        output_path = f"outputs/presentations/{filename}"
+        prs.save(output_path)
+        print(f"✅ Full governance deck saved to: {output_path}")
+        
+        return output_path
+        
+    except Exception as e:
+        print(f"❌ Error creating governance deck: {e}")
+        traceback.print_exc()
+        return None
 
-    # Set a complementary background color (light blue)
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = RGBColor(220, 235, 250)
-
-    # --- FIX: Filter out "Grand Total" before sorting ---
-    summary_df_no_total = summary_df[summary_df["Month"] != "Grand Total"].copy()  # Add .copy() to fix warning
-    summary_df_sorted = summary_df_no_total.sort_values(
-        "Month", key=lambda x: pd.to_datetime(x, format="%b-%y"), ignore_index=True
-    )
-    # Optionally, add the Grand Total row back if needed
-    grand_total_row = summary_df[summary_df["Month"] == "Grand Total"]
-    if not grand_total_row.empty:
-        summary_df_sorted = pd.concat([summary_df_sorted, grand_total_row], ignore_index=True)
-
-    today = pd.Timestamp.today()
-    first_of_current = today.replace(day=1)
-    first_of_previous = (first_of_current - pd.DateOffset(months=1)).replace(day=1)
-    current_month_label = first_of_previous.strftime("%b-%y")
-    current_month_row = summary_df_sorted[summary_df_sorted["Month"] == current_month_label].iloc[0]
-
-    # YTD: filter for current year only
-    summary_df_no_total = summary_df_sorted[summary_df_sorted["Month"] != "Grand Total"].copy()  # Add .copy() to fix warning
-
-    def safe_year_extract(month_str):
-        try:
-            if pd.isna(month_str) or len(str(month_str)) < 2:
-                return None
-            return int(str(month_str)[-2:])
-        except (ValueError, TypeError):
-            print(f"Warning: Could not extract year from '{month_str}'")
-            return None
-
-    summary_df_no_total["year"] = summary_df_no_total["Month"].apply(safe_year_extract)
-    summary_df_no_total = summary_df_no_total.dropna(subset=["year"])
-    
-    current_year = datetime.now().year % 100
-    ytd_df = summary_df_no_total[summary_df_no_total["year"] == current_year]
-    ytd_row = ytd_df.drop(columns=["Month", "year"]).sum(numeric_only=True)
-    completion_pct = 100 * ytd_row["Completed"] / ytd_row["Due"] if ytd_row["Due"] else 0
-
-    # Shape sizes (50% larger)
-    shape_width = 4.5  # 3 * 1.5
-    shape_height = 3.75  # 2.5 * 1.5
-
-    # Font size (20% larger)
-    font_size = int(18 * 1.5)  # 22
-
-    # Vertically center the shapes
-    top = (slide_height - shape_height) / 2
-
-    # Horizontally: center in left and right halves
-    left_left = (slide_width / 4) - (shape_width / 2)
-    left_right = (3 * slide_width / 4) - (shape_width / 2)
-
-    # Left shape: Current Month
-    shape_left = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_left), Inches(top), Inches(shape_width), Inches(shape_height))
-    shape_left.fill.solid()
-    shape_left.fill.fore_color.rgb = RGBColor(230, 240, 255)
-    shape_left.line.color.rgb = RGBColor(0, 0, 0)
-    text_frame_left = shape_left.text_frame
-    text_frame_left.clear()
-    p_left = text_frame_left.paragraphs[0]
-    p_left.text = (
-        f"Current Month ({current_month_row['Month']}):\n"
-        f"  Due: {current_month_row['Due']:.0f}\n"
-        f"  Completed: {current_month_row['Completed']:.0f}\n"
-        f"  Missed: {current_month_row['Missed']:.0f}\n"
-        f"  Completion %: {current_month_row['Completion %']:.1f}"
-    )
-    p_left.font.size = Pt(font_size)
-    p_left.font.bold = True
-    p_left.font.color.rgb = RGBColor(0, 0, 80)
-
-    # Right shape: Year to Date
-    shape_right = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left_right), Inches(top), Inches(shape_width), Inches(shape_height))
-    shape_right.fill.solid()
-    shape_right.fill.fore_color.rgb = RGBColor(255, 245, 230)
-    shape_right.line.color.rgb = RGBColor(0, 0, 0)
-    text_frame_right = shape_right.text_frame
-    text_frame_right.clear()
-    p_right = text_frame_right.paragraphs[0]
-    p_right.text = (
-        f"Year to Date:\n"
-        f"  Due: {ytd_row['Due']:.0f}\n"
-        f"  Completed: {ytd_row['Completed']:.0f}\n"
-        f"  Missed: {ytd_row['Missed']:.0f}\n"
-        f"  Completion %: {completion_pct:.1f}"
-    )
-    p_right.font.size = Pt(font_size)
-    p_right.font.bold = True
-    p_right.font.color.rgb = RGBColor(80, 40, 0)
+def update_summary_slide(prs, by_month_df, late_df, slide_index=0):
+    """
+    Updates slide 0 with monthly summary and YTD summary
+    """
+    try:
+        slide = prs.slides[slide_index]
+        
+        # Calculate current month and YTD data
+        today = datetime.now()
+        current_month = today.strftime("%b-%y")
+        current_year = today.year % 100  # Get 2-digit year
+        
+        # Monthly Summary (Previous Month)
+        prev_month = (today.replace(day=1) - pd.DateOffset(months=1)).strftime("%b-%y")
+        monthly_data = by_month_df[by_month_df['report_month'] == prev_month]
+        
+        if not monthly_data.empty:
+            monthly_generated = monthly_data['generated'].iloc[0]
+            monthly_completed = monthly_data['completed'].iloc[0]
+            monthly_missed = monthly_data['missed'].iloc[0]
+            monthly_completion_rate = (monthly_completed / monthly_generated * 100) if monthly_generated > 0 else 0
+        else:
+            monthly_generated = monthly_completed = monthly_missed = 0
+            monthly_completion_rate = 0
+        
+        # YTD Summary (Current Year)
+        ytd_data = by_month_df[by_month_df['report_month'].str.endswith(f'-{current_year:02d}')]
+        ytd_generated = ytd_data['generated'].sum()
+        ytd_completed = ytd_data['completed'].sum()
+        ytd_missed = ytd_data['missed'].sum()
+        ytd_completion_rate = (ytd_completed / ytd_generated * 100) if ytd_generated > 0 else 0
+        
+        # Count late work orders for summary
+        late_count = len(late_df) if late_df is not None and not late_df.empty else 0
+        
+        # FIX: Ensure the title is preserved
+        # First, find and preserve the title
+        title_shape = None
+        for shape in slide.shapes:
+            if hasattr(shape, "text_frame") and shape.text_frame:
+                text_content = shape.text_frame.text
+                # Check if this is likely the title (position and content)
+                if (hasattr(shape, 'top') and shape.top < Inches(1.5) and 
+                    ("PM Monthly" in text_content or "Summary" in text_content or 
+                     "YTD" in text_content and len(text_content) < 100)):
+                    title_shape = shape
+                    # Set the correct title
+                    title_shape.text_frame.clear()
+                    p = title_shape.text_frame.paragraphs[0]
+                    p.text = "PM Monthly and YTD and Summaries Completion Rates"
+                    p.font.name = 'Aptos'
+                    p.font.size = Pt(32)
+                    p.font.bold = True
+                    p.font.color.rgb = RGBColor(0, 76, 153)  # Blue color
+                    print("✅ Updated slide title")
+                    break
+        
+        # Find and update content text boxes (excluding title)
+        monthly_updated = False
+        ytd_updated = False
+        
+        for shape in slide.shapes:
+            if hasattr(shape, "text_frame") and shape.text_frame and shape != title_shape:
+                text_content = shape.text_frame.text
+                
+                # Monthly Summary Text Box (not in title area)
+                if (("Monthly Summary" in text_content or "Previous Month" in text_content or 
+                     "Month Summary" in text_content) and 
+                    hasattr(shape, 'top') and shape.top > Inches(1.5) and not monthly_updated):
+                    new_text = f"Monthly Summary ({prev_month}):\nGenerated: {monthly_generated:,}\nCompleted: {monthly_completed:,}\nMissed: {monthly_missed:,}\nCompletion Rate: {monthly_completion_rate:.1f}%"
+                    shape.text_frame.clear()
+                    p = shape.text_frame.paragraphs[0]
+                    p.text = new_text
+                    p.font.name = 'Aptos'
+                    p.font.size = Pt(18)
+                    p.font.bold = True
+                    p.font.color.rgb = RGBColor(0, 102, 51)  # Greenish color
+                    monthly_updated = True
+                    print(f"✅ Updated Monthly Summary for {prev_month}")
+                
+                # YTD Summary Text Box (not in title area)
+                elif (("YTD Summary" in text_content or "Year to Date" in text_content) and 
+                      hasattr(shape, 'top') and shape.top > Inches(1.5) and not ytd_updated):
+                    new_text = f"YTD Summary (20{current_year}):\nGenerated: {ytd_generated:,}\nCompleted: {ytd_completed:,}\nMissed: {ytd_missed:,}\nCompletion Rate: {ytd_completion_rate:.1f}%"
+                    shape.text_frame.clear()
+                    p = shape.text_frame.paragraphs[0]
+                    p.text = new_text
+                    p.font.name = 'Aptos'
+                    p.font.size = Pt(18)
+                    p.font.bold = True
+                    p.font.color.rgb = RGBColor(0, 102, 51)  # Greenish color
+                    ytd_updated = True
+                    print(f"✅ Updated YTD Summary for 20{current_year}")
+        
+        # If no existing content text boxes found, create them
+        if not monthly_updated:
+            # Add Monthly Summary text box
+            left = Inches(0.5)
+            top = Inches(2)  # Below title
+            width = Inches(5)
+            height = Inches(3.5)
+            textbox = slide.shapes.add_textbox(left, top, width, height)
+            text_frame = textbox.text_frame
+            text_frame.text = f"Monthly Summary ({prev_month}):\nGenerated: {monthly_generated:,}\nCompleted: {monthly_completed:,}\nMissed: {monthly_missed:,}\nCompletion Rate: {monthly_completion_rate:.1f}%"
+            text_frame.paragraphs[0].font.size = Pt(16)
+            text_frame.paragraphs[0].font.bold = True
+            print(f"📝 Created new Monthly Summary text box for {prev_month}")
+        
+        if not ytd_updated:
+            # Add YTD Summary text box
+            left = Inches(5.5)
+            top = Inches(2)  # Below title
+            width = Inches(5)
+            height = Inches(3.5)
+            textbox = slide.shapes.add_textbox(left, top, width, height)
+            text_frame = textbox.text_frame
+            text_frame.text = f"YTD Summary (20{current_year}):\nGenerated: {ytd_generated:,}\nCompleted: {ytd_completed:,}\nMissed: {ytd_missed:,}\nCompletion Rate: {ytd_completion_rate:.1f}%\nLate Orders: {late_count:,}"
+            text_frame.paragraphs[0].font.size = Pt(16)
+            text_frame.paragraphs[0].font.bold = True
+            print(f"📝 Created new YTD Summary text box for 20{current_year}")
+        
+        print("✅ Summary slide (slide 0) updated successfully")
+        
+    except Exception as e:
+        print(f"❌ Error updating summary slide: {e}")
+        traceback.print_exc()
 
 def update_missed_by_month_chart(prs, by_month_df, slide_index=1):
+    """
+    Updates the missed by month chart on slide 1 and adds stoplight table
+    """
     slide = prs.slides[slide_index]
     
-    # Update existing chart
-    chart_updated = False
+    # Debug: Print DataFrame info
+    print("🔍 DEBUG: by_month_df columns:", by_month_df.columns.tolist())
+    print("🔍 DEBUG: by_month_df shape:", by_month_df.shape)
+    print("🔍 DEBUG: by_month_df head:")
+    print(by_month_df.head())
+    
+    # Find and update the chart
+    chart_found = False
+    text_box_found = False
+    
+    # Handle different possible column names for months
+    month_column = None
+    if 'report_month' in by_month_df.columns:
+        month_column = 'report_month'
+    elif 'Month' in by_month_df.columns:
+        month_column = 'Month'
+    elif by_month_df.index.name == 'report_month':
+        # Month data is in the index
+        by_month_df = by_month_df.reset_index()
+        month_column = 'report_month'
+    else:
+        # Try to use the first column or index
+        if len(by_month_df.columns) > 0:
+            month_column = by_month_df.columns[0]
+        else:
+            print("❌ Could not find month column in DataFrame")
+            return
+    
+    # Map column names to standardized names
+    column_mapping = {
+        'generated': ['Due', 'generated', 'Generated'],
+        'completed': ['Completed', 'completed'], 
+        'missed': ['Missed', 'missed']
+    }
+    
+    # Find the actual column names
+    actual_columns = {}
+    for standard_name, possible_names in column_mapping.items():
+        for possible_name in possible_names:
+            if possible_name in by_month_df.columns:
+                actual_columns[standard_name] = possible_name
+                break
+        if standard_name not in actual_columns:
+            print(f"❌ Could not find column for '{standard_name}' in DataFrame")
+            return
+    
+    print(f"📅 Using month column: '{month_column}'")
+    print(f"📊 Column mapping: {actual_columns}")
+    
     for shape in slide.shapes:
+        # Update chart with new data
         if hasattr(shape, "chart"):
+            chart = shape.chart
             chart_data = CategoryChartData()
-            chart_data.categories = by_month_df["report_month"].astype(str).tolist()
-            chart_data.add_series("Missed", by_month_df["missed"].tolist())
-            chart_data.add_series("Completed", by_month_df["completed"].tolist())
-            chart_data.add_series("Generated", by_month_df["generated"].tolist())
-            shape.chart.replace_data(chart_data)
-            chart_updated = True
+            
+            # Use identified month column as categories
+            categories = by_month_df[month_column].astype(str).tolist()
+            chart_data.categories = categories
+            
+            # Add data series using mapped column names
+            # FIX: Correct order - Generated, Missed, Completed
+            chart_data.add_series('Missed', by_month_df[actual_columns['missed']].tolist())
+            chart_data.add_series('Completed', by_month_df[actual_columns['completed']].tolist())
+            chart_data.add_series('Generated', by_month_df[actual_columns['generated']].tolist())
+            
+            # Replace chart data
+            chart.replace_data(chart_data)
+            chart_found = True
             print("✅ Missed by Month chart updated")
             break
     
-    if not chart_updated:
-        print("⚠️ No chart found on slide to update")
-    
-    # Calculate totals
-    total_due = by_month_df['generated'].sum()
-    total_completed = by_month_df['completed'].sum()  
-    total_missed = by_month_df['missed'].sum()
+    # Update rolling totals text box
+    total_due = by_month_df[actual_columns['generated']].sum()
+    total_completed = by_month_df[actual_columns['completed']].sum()
+    total_missed = by_month_df[actual_columns['missed']].sum()
     
     print(f"📊 Rolling totals calculated:")
     print(f"  Total Due: {total_due}")
     print(f"  Total Completed: {total_completed}")
     print(f"  Total Missed: {total_missed}")
     
-    # Find and update the existing text box with "Rolling 12-Month" text
-    text_box_found = False
+    # Look for existing text box with "Rolling 12-Month" text
     for shape in slide.shapes:
-        try:
-            if hasattr(shape, 'text_frame') and shape.text_frame and hasattr(shape.text_frame, 'text'):
-                if 'Rolling 12-Month' in shape.text_frame.text:
-                    print("🎯 Found existing Rolling 12-Month text box - updating it")
-                    print(f"📍 Template text box position: left={shape.left}, top={shape.top}, width={shape.width}, height={shape.height}")
-                    
-                    text_frame = shape.text_frame
-                    text_frame.clear()
-                    
-                    # Add title
-                    p = text_frame.paragraphs[0]
-                    p.text = "12-Month Totals:"
-                    p.font.size = Pt(20)
-                    p.font.bold = True
-                    p.font.color.rgb = RGBColor(0, 0, 0)
-                    
-                    # Add spacing paragraph
-                    # p = text_frame.add_paragraph()
-                    # p.text = ""
-                    
-                    # Add Due
-                    p = text_frame.add_paragraph()
-                    p.text = f"Due: {total_due:,}"
-                    p.font.size = Pt(18)
-                    p.font.color.rgb = RGBColor(79, 98, 40)  # Dark Green
-                    
-                    # Add Completed  
-                    p = text_frame.add_paragraph()
-                    p.text = f"Completed: {total_completed:,}"
-                    p.font.size = Pt(18)
-                    p.font.color.rgb = RGBColor(149, 55, 53)  # Dark Red
-                    
-                    # Add Missed
-                    p = text_frame.add_paragraph()
-                    p.text = f"Missed: {total_missed:,}"
-                    p.font.size = Pt(16)
-                    p.font.color.rgb = RGBColor(55, 96, 146)  # Dark Blue
-                    
-                    text_box_found = True
-                    print("✅ Rolling 12-month totals updated in existing text box")
-                    print(f"✅ Final text frame content: '{text_frame.text}'")
-                    break
-        except Exception as e:
-            print(f"⚠️ Error checking shape: {e}")
-            continue
+        if hasattr(shape, "text_frame") and shape.text_frame:
+            text_content = shape.text_frame.text
+            if "Rolling 12-Month" in text_content or "12-Month" in text_content:
+                print("🎯 Found existing Rolling 12-Month text box - updating it")
+                print(f"📍 Template text box position: left={shape.left}, top={shape.top}, width={shape.width}, height={shape.height}")
+                
+                # Update the text content
+                new_text = f"12-Month Totals:\nDue: {total_due:,}\nCompleted: {total_completed:,}\nMissed: {total_missed:,}"
+                shape.text_frame.clear()
+                p = shape.text_frame.paragraphs[0]
+                p.text = new_text
+                p.font.size = Pt(18)
+                p.font.bold = True
+                
+                text_box_found = True
+                print(f"✅ Rolling 12-month totals updated in existing text box")
+                print(f"✅ Final text frame content: '{shape.text_frame.text}'")
+                break
+    
+    # Add stoplight table (also needs to be updated)
+    add_stoplight_table_two_tables(prs, slide_index, by_month_df, month_column, actual_columns)
     
     if not text_box_found:
         print("❌ Could not find existing 'Rolling 12-Month' text box in template")
         print("💡 Make sure your template has a text box containing 'Rolling 12-Month' text")
 
-def update_missed_disposition_chart(prs, df_classified, slide_index=2):
+def add_stoplight_table_two_tables(prs, slide_index=1, by_month_df=None, month_column='Month', actual_columns=None):
     """
-    Creates a stacked bar chart showing the disposition of missed work orders over 12 months.
-    
-    Logic:
-    - Use target_date to assign missed work orders to months (when they were due)
-    - Use status to categorize work orders 
-    - Use completion_status = 'MISSED' to identify missed work orders
+    Creates two separate tables:
+    1. Header table (1 row x 1 column) for the key
+    2. Data table (2 rows x 12 columns) for months and stoplights
     """
-    slide = prs.slides[slide_index]
-    
-    print("📊 Building missed work order disposition data...")
-    
-    # Add safety check for df_classified
-    if df_classified is None:
-        print("❌ Error: df_classified is None - cannot build disposition chart")
-        return None
-    
-    if df_classified.empty:
-        print("❌ Error: df_classified is empty - cannot build disposition chart")
-        return None
-    
-    # Check required columns exist
-    required_columns = ['target_date', 'status', 'completion_status']
-    missing_columns = [col for col in required_columns if col not in df_classified.columns]
-    if missing_columns:
-        print(f"❌ Error: Missing required columns in df_classified: {missing_columns}")
-        print(f"Available columns: {df_classified.columns.tolist()}")
-        return None
-    
-    print(f"📅 Using 'target_date' to assign work orders to months (when they were due)")
-    print(f"🏷️ Using 'status' to categorize work orders")
-    print(f"🔍 Using 'completion_status' = 'MISSED' to identify missed work orders")
-    
-    # Build last 12 months boundaries
-    today = pd.Timestamp.today()
-    first_of_current = today.replace(day=1)
-    month_starts = [first_of_current - pd.DateOffset(months=i) for i in range(12, 0, -1)]
-    month_starts.append(first_of_current)
-    
-    # Ensure target_date is datetime
-    df_classified['target_date'] = pd.to_datetime(df_classified['target_date'], errors="coerce")
-    
-    # UPDATED STATUS GROUPINGS - Need to match original chart definition
-    # Based on your expected numbers, let's see what statuses need to be regrouped
-    closed_statuses = ["CLOSE", "REVWD", "PENRVW"]  # Keep these
-    awaiting_qa_statuses = ["PENDQA"]  # Keep this
-    awaiting_dept_statuses = ["FLAGGED", "MISSED"]  # Explicitly define these
-    
-    print("🔧 UPDATED status groupings:")
-    print(f"   Closed: {closed_statuses}")
-    print(f"   Awaiting QA: {awaiting_qa_statuses}")
-    print(f"   Awaiting Dept: {awaiting_dept_statuses}")
-    
-    # Show overall completion_status breakdown for verification
-    print("📊 Overall completion_status breakdown:")
-    completion_status_counts = df_classified['completion_status'].value_counts(dropna=False)
-    for status, count in completion_status_counts.items():
-        print(f"   '{status}': {count}")
-    
-    # Find work orders that were flagged as missed using completion_status = 'MISSED'
-    all_missed = df_classified[df_classified['completion_status'] == 'MISSED']
-    print(f"📊 Total work orders with completion_status = 'MISSED': {len(all_missed)}")
-    
-    # DEBUGGING: Show detailed breakdown for July to understand the discrepancy
-    print("\n🔍 DETAILED JULY ANALYSIS:")
-    july_start = pd.Timestamp('2025-07-01')
-    july_end = pd.Timestamp('2025-08-01')
-    july_mask = (df_classified['target_date'] > july_start) & (df_classified['target_date'] <= july_end)
-    july_all = df_classified[july_mask]
-    july_missed = july_all[july_all['completion_status'] == 'MISSED']
-    
-    print(f"📅 July work orders (target_date 2025-07-01 to 2025-08-01):")
-    print(f"   Total work orders in July: {len(july_all)}")
-    print(f"   Missed work orders in July: {len(july_missed)}")
-    
-    if not july_missed.empty:
-        print(f"\n📊 July missed work orders by status:")
-        july_status_breakdown = july_missed["status"].value_counts()
-        for status, count in july_status_breakdown.items():
-            if status in closed_statuses:
-                category = "Closed"
-            elif status in awaiting_qa_statuses:
-                category = "Awaiting QA"
-            elif status in awaiting_dept_statuses:
-                category = "Awaiting Dept"
-            else:
-                category = "UNASSIGNED"
-            print(f"   {status}: {count} ({category})")
+    try:
+        slide = prs.slides[slide_index]
         
-        # Check if we have unassigned statuses
-        all_assigned_statuses = set(closed_statuses + awaiting_qa_statuses + awaiting_dept_statuses)
-        unassigned = july_missed[~july_missed["status"].isin(all_assigned_statuses)]
-        if not unassigned.empty:
-            print(f"\n⚠️ UNASSIGNED statuses in July: {unassigned['status'].unique()}")
-            print("💡 These statuses need to be added to one of the categories above")
-    
-    disposition_data = []
-    
-    for i in range(12):
-        start = month_starts[i]
-        end = month_starts[i+1]
-        month_label = start.strftime("%b-%y")
-        
-        # Get work orders assigned to this month based on TARGET_DATE (when they were due)
-        mask = (df_classified['target_date'] > start) & (df_classified['target_date'] <= end)
-        month_df = df_classified[mask]
-        
-        # Find work orders that were flagged as missed using completion_status = 'MISSED'
-        missed_wo_df = month_df[month_df['completion_status'] == 'MISSED']
-        
-        # Print unique statuses for debugging
-        if not missed_wo_df.empty:
-            unique_current_statuses = missed_wo_df["status"].unique()
-            print(f"  {month_label}: Current statuses: {unique_current_statuses}")
+        # Extract months using the identified month column
+        if by_month_df is not None and not by_month_df.empty:
+            months = by_month_df[month_column].astype(str).tolist()[:12]
+            print(f"📅 Using months from chart data: {months}")
         else:
-            print(f"  {month_label}: No missed work orders found")
+            months = ['Oct-24', 'Nov-24', 'Dec-24', 'Jan-25', 'Feb-25', 'Mar-25',
+                      'Apr-25', 'May-25', 'Jun-25', 'Jul-25', 'Aug-25', 'Sep-25']
+            print(f"⚠️ Using default months: {months}")
         
-        # Categorize by CURRENT STATUS (using explicit lists)
-        closed_count = missed_wo_df[missed_wo_df["status"].isin(closed_statuses)].shape[0]
-        awaiting_qa_count = missed_wo_df[missed_wo_df["status"].isin(awaiting_qa_statuses)].shape[0]
-        awaiting_dept_count = missed_wo_df[missed_wo_df["status"].isin(awaiting_dept_statuses)].shape[0]
+        # Ensure exactly 12 months
+        while len(months) < 12:
+            months.append("")
+        months = months[:12]
         
-        # Check for unassigned statuses
-        all_assigned_statuses = set(closed_statuses + awaiting_qa_statuses + awaiting_dept_statuses)
-        unassigned_count = missed_wo_df[~missed_wo_df["status"].isin(all_assigned_statuses)].shape[0]
+        # === TABLE 1: HEADER TABLE ===
+        print("📋 Creating header table...")
+        header_left = Inches(0.42)
+        header_top = Inches(0.75)
+        header_width = Inches(10.17)
+        header_height = Inches(0.25)
         
-        total_missed = len(missed_wo_df)
+        # Create header table (1 row x 1 column)
+        header_table_shape = slide.shapes.add_table(1, 1, header_left, header_top, header_width, header_height)
+        header_table = header_table_shape.table
         
-        disposition_data.append({
-            "month": month_label,
-            "closed": closed_count,
-            "awaiting_qa": awaiting_qa_count, 
-            "awaiting_dept": awaiting_dept_count,
-            "unassigned": unassigned_count,  # Track unassigned for debugging
-            "total": total_missed
-        })
+        # Style header table
+        header_cell = header_table.cell(0, 0)
+        header_cell.text = "Stop Lights -  🔴: Missed > 6%,    🟡: MISSED >3% <=6%,    🟢 <=3%"
+        header_cell.text_frame.paragraphs[0].font.size = Pt(16)
+        header_cell.text_frame.paragraphs[0].font.bold = True
+        header_cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+        header_cell.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)  # White text
+        header_cell.fill.solid()
+        header_cell.fill.fore_color.rgb = RGBColor(51, 153, 255)  # Light blue background
         
-        print(f"  {month_label}: Total missed={total_missed}, Closed={closed_count}, QA={awaiting_qa_count}, Dept={awaiting_dept_count}")
-        if unassigned_count > 0:
-            unassigned_statuses = missed_wo_df[~missed_wo_df["status"].isin(all_assigned_statuses)]["status"].value_counts()
-            print(f"    ⚠️ UNASSIGNED: {unassigned_count} - {unassigned_statuses.to_dict()}")
-    
-    # Convert to DataFrame
-    disposition_df = pd.DataFrame(disposition_data)
-    
-    # Verify totals
-    print(f"📊 Verification - Total missed from disposition: {disposition_df['total'].sum()}")
-    print(f"📊 Total unassigned statuses: {disposition_df['unassigned'].sum()}")
-    
-    # Show overall status breakdown for all missed work orders
-    if not all_missed.empty:
-        print(f"📈 Overall CURRENT status breakdown for ALL missed work orders:")
-        status_breakdown = all_missed["status"].value_counts()
-        for status, count in status_breakdown.items():
-            if status in closed_statuses:
-                category = "Closed"
-            elif status in awaiting_qa_statuses:
-                category = "Awaiting QA"
-            elif status in awaiting_dept_statuses:
-                category = "Awaiting Dept"
+        print("✅ Header table created")
+        
+        # === TABLE 2: DATA TABLE ===
+        print("📊 Creating data table...")
+        data_left = Inches(0.42)
+        data_top = Inches(1.1)  # Just below header table
+        data_width = Inches(10.17)
+        data_height = Inches(0.77)
+        
+        # Create data table (2 rows x 12 columns)
+        data_table_shape = slide.shapes.add_table(2, 12, data_left, data_top, data_width, data_height)
+        data_table = data_table_shape.table
+        
+        # Row 1: Month names
+        print("📅 Adding month names...")
+        for col, month in enumerate(months):
+            cell = data_table.cell(0, col)
+            cell.text = str(month) if month else ""
+            cell.text_frame.paragraphs[0].font.size = Pt(13)
+            cell.text_frame.paragraphs[0].font.bold = True
+            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            cell.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
+            # Light blue background for month row
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = RGBColor(51, 153, 255) 
+            
+        # Row 2: Stoplight indicators
+        print("🚦 Adding stoplight indicators...")
+        for col, month in enumerate(months):
+            cell = data_table.cell(1, col)
+            
+            if month:  # Only calculate if we have a valid month
+                missed_percentage = calculate_performance_metric(by_month_df, month, month_column, actual_columns)
+                
+                # Determine stoplight color based on missed percentage
+                if missed_percentage > 6:
+                    stoplight = "🔴"  # RED: Missed > 6%
+                    bg_color = RGBColor(102, 0, 0)  # Light red
+                elif missed_percentage > 3:
+                    stoplight = "🟡"  # YELLOW: Missed >3% <=6%
+                    bg_color = RGBColor(204, 204, 0)  # Light yellow
+                else:
+                    stoplight = "🟢"  # GREEN: <=3%
+                    bg_color = RGBColor(0, 204, 0)  # Light green
             else:
-                category = "UNASSIGNED"
-            print(f"   {status}: {count} ({category})")
-    
-    # Chart creation code (rest remains the same)
-    chart_shape = None
-    chart_position = None
-    
-    # Find the chart and store its position
-    for shape in slide.shapes:
-        if hasattr(shape, "chart"):
-            chart_position = {
-                'left': shape.left,
-                'top': shape.top, 
-                'width': shape.width,
-                'height': shape.height
-            }
-            print(f"🎯 Found chart at position: {chart_position}")
-            chart_shape = shape
-            break
-    
-    if chart_shape and chart_position:
-        # Delete the old chart
-        sp = chart_shape._element
-        sp.getparent().remove(sp)
-        print("🗑️ Removed problematic chart")
+                # Empty cell for padding
+                stoplight = ""
+                bg_color = RGBColor(255, 255, 255)  # White background
+            
+            cell.text = stoplight
+            cell.text_frame.paragraphs[0].font.size = Pt(16)
+            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = bg_color
         
-        # Create new chart at same position
-        try:
-            chart_data = CategoryChartData()
-            chart_data.categories = disposition_df["month"].tolist()
-            
-            # Add series in order: "Closed", "Awaiting QA", "Awaiting Dept"
-            chart_data.add_series("Closed", disposition_df["closed"].tolist())
-            chart_data.add_series("Awaiting QA", disposition_df["awaiting_qa"].tolist()) 
-            chart_data.add_series("Awaiting Dept", disposition_df["awaiting_dept"].tolist())
-            
-            # Create new chart
-            left = chart_position['left']
-            top = chart_position['top']
-            width = chart_position['width'] 
-            height = chart_position['height']
-            
-            new_chart = slide.shapes.add_chart(
-                XL_CHART_TYPE.COLUMN_STACKED, left, top, width, height, chart_data
-            ).chart
-            
-            # Configure the new chart
-            new_chart.has_legend = True
-            new_chart.legend.position = XL_LEGEND_POSITION.TOP
-            
-            # Apply Style 8
+        # Style both tables
+        header_table.first_row = False
+        header_table.first_col = False
+        data_table.first_row = False
+        data_table.first_col = False
+        
+        print("✅ Two-table stoplight display created successfully")
+        return data_table
+     
+    except Exception as e:
+        print(f"❌ Error creating two-table stoplight display: {e}")
+        traceback.print_exc()
+        return None
+
+def calculate_performance_metric(by_month_df, month, month_column='Month', actual_columns=None):
+    """
+    Calculate missed percentage for stoplight determination
+    Formula: Missed / (Missed + Completed) * 100
+    Returns missed percentage (0-100)
+    """
+    if by_month_df is None or actual_columns is None:
+        return 2  # Default value for testing (GREEN)
+    
+    # Find the row for this month
+    month_data = by_month_df[by_month_df[month_column] == month]
+    if not month_data.empty:
+        missed = month_data[actual_columns['missed']].iloc[0]
+        completed = month_data[actual_columns['completed']].iloc[0]
+        
+        # Calculate missed percentage: Missed / (Missed + Completed)
+        total_wo_processed = missed + completed
+        missed_percentage = (missed / total_wo_processed) * 100 if total_wo_processed > 0 else 0
+        
+        print(f"📊 {month}: Missed={missed}, Completed={completed}, Missed%={missed_percentage:.2f}%")
+        return missed_percentage
+    
+    return 0  # Default if month not found
+
+def update_missed_disposition_chart(prs, disposition_df, slide_index=2):
+    """
+    Updates the missed disposition chart on slide 2
+    """
+    try:
+        if disposition_df is None or disposition_df.empty:
+            print("⚠️ No disposition data provided - skipping disposition chart")
+            return
+        
+        slide = prs.slides[slide_index]
+        
+        print(f"🔍 DEBUG: disposition_df columns: {disposition_df.columns.tolist()}")
+        print(f"🔍 DEBUG: disposition_df shape: {disposition_df.shape}")
+        
+        # FIX: Sort months chronologically instead of alphabetically
+        def month_sort_key(month_str):
+            """Convert month string to sortable format"""
             try:
-                new_chart.chart_style = 8
-                print("✅ Applied Style 8 to chart")
+                # Parse "MMM-YY" format (e.g., "Oct-24")
+                month_date = pd.to_datetime(month_str, format='%b-%y')
+                return month_date
             except:
-                print("⚠️ Could not apply Style 8 - using default style")
+                return pd.to_datetime('1900-01-01')  # Default for invalid dates
+        
+        # Sort disposition_df by month chronologically
+        disposition_df_sorted = disposition_df.copy()
+        disposition_df_sorted['sort_key'] = disposition_df_sorted['report_month'].apply(month_sort_key)
+        disposition_df_sorted = disposition_df_sorted.sort_values('sort_key').drop('sort_key', axis=1)
+        
+        print(f"🔍 DEBUG: Months after sorting: {disposition_df_sorted['report_month'].tolist()}")
+        
+        # Map column names
+        disposition_columns = {
+            'month': 'report_month',
+            'closed': 'closed',
+            'awaiting_qa': 'awaiting_qa',
+            'awaiting_dept': 'awaiting_dept'
+        }
+        
+        print(f"📊 Disposition column mapping: {disposition_columns}")
+        
+        # Find existing chart and remove it first
+        for shape in slide.shapes:
+            if hasattr(shape, "chart"):
+                chart_position = {
+                    'left': shape.left,
+                    'top': shape.top, 
+                    'width': shape.width,
+                    'height': shape.height
+                }
+                print(f"🎯 Found chart at position: {chart_position}")
+                
+                # Remove the existing chart
+                slide.shapes._spTree.remove(shape._element)
+                print("🗑️ Removed problematic chart")
+                break
+        
+        # Create new chart
+        try:
+            # Chart position and size
+            chart_left = Inches(1)
+            chart_top = Inches(1.25)
+            chart_width = Inches(10)
+            chart_height = Inches(5)
             
-            # Format series with proper colors
-            series_colors = [
-                RGBColor(40, 167, 69),    # Green for Closed (bottom)
-                RGBColor(255, 193, 7),    # Yellow for Awaiting QA (middle)  
-                RGBColor(220, 53, 69)     # Red for Awaiting Dept (top)
-            ]
+            # Prepare chart data
+            chart_data = CategoryChartData()
+            chart_data.categories = disposition_df_sorted[disposition_columns['month']].astype(str).tolist()
+            chart_data.add_series('Closed', disposition_df_sorted[disposition_columns['closed']].tolist())
+            chart_data.add_series('Awaiting QA', disposition_df_sorted[disposition_columns['awaiting_qa']].tolist())
+            chart_data.add_series('Awaiting Dept', disposition_df_sorted[disposition_columns['awaiting_dept']].tolist())
             
-            for i, series in enumerate(new_chart.series):
-                if i < len(series_colors):
+            # Add chart
+            chart_shape = slide.shapes.add_chart(
+                XL_CHART_TYPE.COLUMN_STACKED, 
+                chart_left, chart_top, chart_width, chart_height, chart_data
+            )
+            chart = chart_shape.chart
+            
+            # Apply styling
+            chart.chart_style = 8
+            print("✅ Applied Style 8 to chart")
+            
+            # Color the series
+            series_colors = {
+                'Closed': '28A745',      # Green
+                'Awaiting QA': 'FFC107', # Yellow  
+                'Awaiting Dept': 'DC3545' # Red
+            }
+            
+            for i, series in enumerate(chart.series):
+                series_name = ['Closed', 'Awaiting QA', 'Awaiting Dept'][i]
+                if series_name in series_colors:
+                    color_hex = series_colors[series_name]
+                    r = int(color_hex[0:2], 16)
+                    g = int(color_hex[2:4], 16)
+                    b = int(color_hex[4:6], 16)
                     series.format.fill.solid()
-                    series.format.fill.fore_color.rgb = series_colors[i]
-                    print(f"  ✅ Formatted series '{series.name}' with color {series_colors[i]}")
+                    series.format.fill.fore_color.rgb = RGBColor(r, g, b)
+                    print(f"  ✅ Formatted series '{series_name}' with color {color_hex}")
             
             print("✅ Successfully created new disposition chart")
             
+            # Print summary
+            total_missed = disposition_df_sorted[[disposition_columns['closed'], 
+                                     disposition_columns['awaiting_qa'], 
+                                     disposition_columns['awaiting_dept']]].sum().sum()
+            print(f"📈 Disposition summary: Total missed work orders = {total_missed}")
+            
         except Exception as e:
-            print(f"❌ Error creating new chart: {e}")
-            import traceback
+            print(f"❌ Error creating disposition chart: {e}")
             traceback.print_exc()
-    else:
-        print("❌ Could not find chart to replace")
-    
-    print(f"📈 Disposition summary: Total missed work orders = {disposition_df['total'].sum()}")
-    
-    return disposition_df
+            
+    except Exception as e:
+        print(f"❌ Error updating disposition chart: {e}")
+        traceback.print_exc()
 
-def update_missed_by_group_charts(prs, by_group_df, slide_index=3):  # Updated index: was 2, now 3
+def update_group_charts(prs, by_group_df, slide_index=3):
+    """
+    Updates group-based charts on slide 3
+    """
+    if by_group_df is None or by_group_df.empty:
+        print("⚠️ No group data provided - skipping group charts")
+        return
+        
     slide = prs.slides[slide_index]
+    
+    # Debug: Print DataFrame info
+    print("🔍 DEBUG: by_group_df columns:", by_group_df.columns.tolist())
+    print("🔍 DEBUG: by_group_df shape:", by_group_df.shape)
+    
+    # Map column names for group charts
+    group_column_mapping = {
+        'group': ['group', 'Group', 'GROUP'],
+        'missed': ['missed', 'Missed', 'MISSED'],
+        'missed_percentage': ['missed_percentage', 'Missed %', 'missed_pct', 'Miss %'],
+        'still_open': ['still_open', 'Still Open', 'Open', 'OPEN']
+    }
+    
+    # Find actual column names
+    actual_group_columns = {}
+    for standard_name, possible_names in group_column_mapping.items():
+        for possible_name in possible_names:
+            if possible_name in by_group_df.columns:
+                actual_group_columns[standard_name] = possible_name
+                break
+    
+    print(f"📊 Group column mapping: {actual_group_columns}")
+    
+    # Chart titles to look for
+    chart_titles = [
+        "Qty Missed by Group",
+        "% Missed by Group", 
+        "Missed Still Open by Group"
+    ]
+    
     for shape in slide.shapes:
         if hasattr(shape, "chart"):
-            if shape.name == "Qty Missed by Group":
-                chart_data = CategoryChartData()
-                chart_data.categories = by_group_df["group"].tolist()
-                chart_data.add_series("Missed", by_group_df["missed"].tolist())
-                shape.chart.replace_data(chart_data)
-            elif shape.name == "% Missed by Group":
-                chart_data = CategoryChartData()
-                chart_data.categories = by_group_df["group"].tolist()
-                chart_data.add_series("% Missed", by_group_df["missed_percent"].tolist())
-                shape.chart.replace_data(chart_data)
+            chart = shape.chart
+            chart_title = chart.chart_title.text_frame.text if chart.has_title else "Unknown Chart"
             
-            print(f"Updating chart: {shape.name}")
+            if chart_title in chart_titles:
+                print(f"Updating chart: {chart_title}")
+                
+                try:
+                    # Check if we have required columns for this chart
+                    if 'group' not in actual_group_columns:
+                        print(f"⚠️ No group column found - skipping {chart_title}")
+                        continue
+                    
+                    # Update chart data based on title
+                    chart_data = CategoryChartData()
+                    chart_data.categories = by_group_df[actual_group_columns['group']].tolist()
+                    
+                    if "Qty Missed" in chart_title and 'missed' in actual_group_columns:
+                        chart_data.add_series('Missed', by_group_df[actual_group_columns['missed']].tolist())
+                    elif "% Missed" in chart_title and 'missed_percentage' in actual_group_columns:
+                        chart_data.add_series('% Missed', by_group_df[actual_group_columns['missed_percentage']].tolist())
+                    elif "Still Open" in chart_title and 'still_open' in actual_group_columns:
+                        chart_data.add_series('Still Open', by_group_df[actual_group_columns['still_open']].tolist())
+                    else:
+                        print(f"⚠️ Required columns not found for {chart_title}")
+                        continue
+                    
+                    # Replace chart data
+                    chart.replace_data(chart_data)
+                    print(f"✅ Updated {chart_title}")
+                    
+                except Exception as e:
+                    print(f"❌ Error updating {chart_title}: {e}")
 
-def update_missed_still_open_chart(prs, by_group_df, slide_index=4):  # Updated index: was 3, now 4
-    slide = prs.slides[slide_index]
-    for shape in slide.shapes:
-        if hasattr(shape, "chart") and shape.name == "Missed Still Open by Group":
-            # Filter out groups where still_open == 0
-            filtered_df = by_group_df[by_group_df["still_open"] > 0]
-            chart_data = CategoryChartData()
-            chart_data.categories = filtered_df["group"].tolist()
-            chart_data.add_series("Still Open", filtered_df["still_open"].tolist())
-            shape.chart.replace_data(chart_data)
-            print(f"Updating chart: {shape.name}")
-
-def create_full_governance_deck(summary_df, by_group_df, by_month_df, df_classified, late_df=None, filename=None):
+def generate_summary_stats(by_month_df, disposition_df, by_group_df):
     """
-    Creates a comprehensive governance deck with multiple slides and analysis.
-    Updated to support custom filename with auto-generated month abbreviation.
+    Generates summary statistics for the governance deck
     """
-    
-    # Generate filename with previous month abbreviation if not provided
-    if filename is None:
-        today = pd.Timestamp.today()
-        previous_month = today.replace(day=1) - pd.DateOffset(months=1)
-        month_abbr = previous_month.strftime("%b")  # Three-letter abbreviation
-        filename = f"governance_slide_{month_abbr}.pptx"
-        print(f"🔍 DEBUG: Auto-generated PowerPoint filename: {filename}")
-    else:
-        print(f"🔍 DEBUG: Using provided PowerPoint filename: {filename}")
-    
-    # Load the template
-    template_path = "data/templates/governance_slide_template.pptx"
-    if not os.path.exists(template_path):
-        print(f"❌ Template not found: {template_path}")
-        return None
-    
     try:
-        prs = Presentation(template_path)
+        # Monthly totals
+        total_generated = by_month_df['generated'].sum()
+        total_completed = by_month_df['completed'].sum() 
+        total_missed = by_month_df['missed'].sum()
+        
+        # Performance metrics
+        completion_rate = (total_completed / total_generated * 100) if total_generated > 0 else 0
+        miss_rate = (total_missed / total_generated * 100) if total_generated > 0 else 0
+        
+        # Group performance
+        worst_group = by_group_df.loc[by_group_df['missed_percentage'].idxmax(), 'group'] if not by_group_df.empty else 'N/A'
+        best_group = by_group_df.loc[by_group_df['missed_percentage'].idxmin(), 'group'] if not by_group_df.empty else 'N/A'
+        
+        # Recent trend (last 3 months)
+        recent_months = by_month_df.tail(3)
+        recent_miss_rate = (recent_months['missed'].sum() / recent_months['generated'].sum() * 100) if recent_months['generated'].sum() > 0 else 0
+        
+        summary = {
+            'total_generated': total_generated,
+            'total_completed': total_completed,
+            'total_missed': total_missed,
+            'completion_rate': completion_rate,
+            'miss_rate': miss_rate,
+            'worst_group': worst_group,
+            'best_group': best_group,
+            'recent_miss_rate': recent_miss_rate
+        }
+        
+        print("📊 Summary Statistics Generated:")
+        print(f"  Total Work Orders: {total_generated:,}")
+        print(f"  Completion Rate: {completion_rate:.1f}%")
+        print(f"  Miss Rate: {miss_rate:.1f}%")
+        print(f"  Worst Performing Group: {worst_group}")
+        print(f"  Best Performing Group: {best_group}")
+        print(f"  Recent 3-Month Miss Rate: {recent_miss_rate:.1f}%")
+        
+        return summary
+        
     except Exception as e:
-        print(f"❌ Error loading template: {e}")
-        return None
+        print(f"❌ Error generating summary stats: {e}")
+        return {}
 
-    update_governance_slide(summary_df, prs, slide_index=0)
-    update_missed_by_month_chart(prs, by_month_df, slide_index=1)
-    update_missed_disposition_chart(prs, df_classified, slide_index=2)
-    update_missed_by_group_charts(prs, by_group_df, slide_index=3)
-    update_missed_still_open_chart(prs, by_group_df, slide_index=4)
-    
-    # If late_df is provided, also export it to Excel for presenter reference
-    if late_df is not None and not late_df.empty:
-        excel_path = "outputs/presentations/governance_with_late_orders.xlsx"
-        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            summary_df.to_excel(writer, sheet_name='Summary', index=False)
-            late_df.to_excel(writer, sheet_name='Late > 90 Days', index=False)
-        print(f"✅ Excel with late orders saved to: {excel_path}")
-    
-    # Update the save path to use the custom/generated filename
-    save_path = f"outputs/presentations/{filename}"
-    
-    # Ensure the directory exists
-    os.makedirs("outputs/presentations", exist_ok=True)
-    
-    # Save with the new filename
+def validate_slide_content(prs):
+    """
+    Validates that all slides have the expected content
+    """
     try:
-        prs.save(save_path)
-        print(f"✅ Full governance deck saved to: {save_path}")
+        print("🔍 Validating slide content...")
+        
+        for i, slide in enumerate(prs.slides):
+            print(f"📄 Slide {i + 1}:")
+            
+            # Count different types of shapes
+            charts = 0
+            tables = 0
+            text_boxes = 0
+            
+            for shape in slide.shapes:
+                if hasattr(shape, "chart"):
+                    charts += 1
+                elif hasattr(shape, "table"):
+                    tables += 1
+                elif hasattr(shape, "text_frame"):
+                    text_boxes += 1
+            
+            print(f"  Charts: {charts}, Tables: {tables}, Text boxes: {text_boxes}")
+        
+        print("✅ Slide validation complete")
+        
     except Exception as e:
-        print(f"❌ Error saving PowerPoint: {e}")
-        return None
-    
-    return save_path
+        print(f"❌ Error validating slides: {e}")
 
+# Legacy function kept for backward compatibility
+def create_monthly_governance_slide(by_month_df, filename=None):
+    """
+    Legacy function - use create_full_governance_deck instead
+    """
+    print("⚠️ Using legacy function - consider updating to create_full_governance_deck")
+    return create_full_governance_deck(by_month_df, None, None, None, filename)
+
+def create_governance_slide(by_month_df, filename=None):
+    """
+    Creates a governance slide with monthly data
+    Wrapper function for backward compatibility with GUI
+    """
+    print("📊 Creating governance slide from GUI...")
+    return create_full_governance_deck(by_month_df, None, None, None, filename)

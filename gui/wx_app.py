@@ -41,8 +41,7 @@ from scripts.slide_generator import (
     create_governance_slide,
     create_full_governance_deck
 )
-from main import prepare_data
-
+from scripts.data_processor import prepare_data
 
 
 class WorkOrderDashboard(wx.Frame):
@@ -130,8 +129,8 @@ class WorkOrderDashboard(wx.Frame):
         def run_report():
             try:
                 file_path = self.file_picker.GetPath()
-                # FIX: Add df_classified to the return values
-                summary, by_group_df, trend_df, late_df, df1, df2, df_classified = prepare_data(file_path)
+                # FIX: Unpack all 8 return values including disposition_df
+                summary, by_group_df, trend_df, late_df, pm_month_df, ytd_df, df_classified, disposition_df = prepare_data(file_path)
 
                 include_late_orders = self.include_late.GetValue()
                 
@@ -146,9 +145,10 @@ class WorkOrderDashboard(wx.Frame):
                     
                     # Pass late_df when checkbox is checked
                     late_data = late_df if include_late_orders else None
-                    # FIX: Add df_classified parameter to the function call
-                    create_full_governance_deck(summary, by_group_df, trend_df, df_classified, late_data)
-                                    
+                    # FIX: Update function call to match the new signature
+                    # create_full_governance_deck(by_month_df, late_df, disposition_df, by_group_df, filename)
+                    create_full_governance_deck(trend_df, late_data, disposition_df, by_group_df, filename=None)
+                                
                     # If checkbox is checked, could add late orders to a separate slide
                     if include_late_orders and not late_df.empty:
                         # Could extend governance deck with late orders slide
@@ -159,6 +159,8 @@ class WorkOrderDashboard(wx.Frame):
                 wx.CallAfter(self.status_text.SetLabel, f"📊 {report_choice} exported successfully.")
             except Exception as err:
                 print(f"Full error: {err}")
+                import traceback
+                traceback.print_exc()
                 wx.CallAfter(self.status_text.SetLabel, f"❌ Error: {err}")
 
         threading.Thread(target=run_report).start()
