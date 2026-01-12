@@ -574,19 +574,18 @@ def update_missed_disposition_chart(prs, disposition_df, slide_index=2):
 
 def update_group_charts(prs, by_group_df, slide_index=3):
     """
-    Updates group-based charts on slide 3
+    Updates group-based charts on slides 3 and 4
     """
     if by_group_df is None or by_group_df.empty:
         print("⚠️ No group data provided - skipping group charts")
         return
-        
-    slide = prs.slides[slide_index]
     
     # Debug: Print DataFrame info
     print("🔍 DEBUG: by_group_df columns:", by_group_df.columns.tolist())
     print("🔍 DEBUG: by_group_df shape:", by_group_df.shape)
     
     # Map column names for group charts
+
     group_column_mapping = {
         'group': ['group', 'Group', 'GROUP'],
         'missed': ['missed', 'Missed', 'MISSED'],
@@ -611,40 +610,68 @@ def update_group_charts(prs, by_group_df, slide_index=3):
         "Missed Still Open by Group"
     ]
     
-    for shape in slide.shapes:
-        if hasattr(shape, "chart"):
-            chart = shape.chart
-            chart_title = chart.chart_title.text_frame.text if chart.has_title else "Unknown Chart"
+    # Debug: Check all slides for charts
+    print("🔍 DEBUG: Searching all slides for group charts:")
+    for slide_idx, check_slide in enumerate(prs.slides):
+        for shape in check_slide.shapes:
+            try:
+                chart = shape.chart
+                title = chart.chart_title.text_frame.text if chart.has_title else "Unknown Chart"
+                if any(t in title for t in chart_titles):
+                    print(f"  - Found on slide {slide_idx}: '{title}'")
+            except:
+                pass  # Shape doesn't contain a chart
+    
+    # Process all slides that might have group charts (slides 3 and 4)
+    for slide_idx in [3, 4]:
+        if slide_idx >= len(prs.slides):
+            continue
             
-            if chart_title in chart_titles:
-                print(f"Updating chart: {chart_title}")
+        slide = prs.slides[slide_idx]
+        print(f"\n🔍 Processing slide {slide_idx}...")
+    
+        for shape in slide.shapes:
+            try:
+                chart = shape.chart
+                chart_title = chart.chart_title.text_frame.text if chart.has_title else "Unknown Chart"
                 
-                try:
-                    # Check if we have required columns for this chart
-                    if 'group' not in actual_group_columns:
-                        print(f"⚠️ No group column found - skipping {chart_title}")
-                        continue
+                if chart_title in chart_titles:
+                    print(f"Updating chart on slide {slide_idx}: {chart_title}")
                     
-                    # Update chart data based on title
-                    chart_data = CategoryChartData()
-                    chart_data.categories = by_group_df[actual_group_columns['group']].tolist()
-                    
-                    if "Qty Missed" in chart_title and 'missed' in actual_group_columns:
-                        chart_data.add_series('Missed', by_group_df[actual_group_columns['missed']].tolist())
-                    elif "% Missed" in chart_title and 'missed_percentage' in actual_group_columns:
-                        chart_data.add_series('% Missed', by_group_df[actual_group_columns['missed_percentage']].tolist())
-                    elif "Still Open" in chart_title and 'still_open' in actual_group_columns:
-                        chart_data.add_series('Still Open', by_group_df[actual_group_columns['still_open']].tolist())
-                    else:
-                        print(f"⚠️ Required columns not found for {chart_title}")
-                        continue
-                    
-                    # Replace chart data
-                    chart.replace_data(chart_data)
-                    print(f"✅ Updated {chart_title}")
-                    
-                except Exception as e:
-                    print(f"❌ Error updating {chart_title}: {e}")
+                    try:
+                        # Check if we have required columns for this chart
+                        if 'group' not in actual_group_columns:
+                            print(f"⚠️ No group column found - skipping {chart_title}")
+                            continue
+                        
+                        # Update chart data based on title
+                        chart_data = CategoryChartData()
+                        categories_list = by_group_df[actual_group_columns['group']].tolist()
+                        chart_data.categories = categories_list
+                        
+                        # Debug: Print what categories we're setting
+                        print(f"🔍 DEBUG: Categories for {chart_title}: {categories_list}")
+                        
+                        if "Qty Missed" in chart_title and 'missed' in actual_group_columns:
+                            chart_data.add_series('Missed', by_group_df[actual_group_columns['missed']].tolist())
+                        elif "% Missed" in chart_title and 'missed_percentage' in actual_group_columns:
+                            chart_data.add_series('% Missed', by_group_df[actual_group_columns['missed_percentage']].tolist())
+                        elif "Still Open" in chart_title and 'still_open' in actual_group_columns:
+                            still_open_values = by_group_df[actual_group_columns['still_open']].tolist()
+                            print(f"🔍 DEBUG: Still Open values: {still_open_values}")
+                            chart_data.add_series('Still Open', still_open_values)
+                        else:
+                            print(f"⚠️ Required columns not found for {chart_title}")
+                            continue
+                        
+                        # Replace chart data
+                        chart.replace_data(chart_data)
+                        print(f"✅ Updated {chart_title}")
+                        
+                    except Exception as e:
+                        print(f"❌ Error updating {chart_title}: {e}")
+            except:
+                pass  # Shape doesn't contain a chart
 
 def generate_summary_stats(by_month_df, disposition_df, by_group_df):
     """
